@@ -1,0 +1,825 @@
+module Eval2 = struct
+
+type app_def = {
+ op_name : string;
+  arg_types : hol_type list;
+  mutable op_fun : (term list -> thm);
+};;
+
+type c_tree =
+  | C_poly_term of term
+  | C_fixed_term of term
+  | C_app_term of c_tree * c_tree
+  | C_var of string * int
+  | C_app of app_def * c_tree list
+  | C_var_app of (string * int) * c_tree list;;
+
+type p_tree =
+    P_poly_var of string * hol_type
+  | P_fixed_var of term
+  | P_poly_const of string * hol_type
+  | P_fixed_term of term
+  | P_func_const of string
+  | P_app of p_tree * p_tree;;
+
+type compiled_def = {
+  name : string;
+  def_th : thm;
+  arg_patterns : p_tree list;
+  comp : c_tree;
+  conditions : (term * c_tree) list;
+};;
+
+type app_entry = {
+  app_def : app_def;
+  mutable app_data : compiled_def list option;
+};;
+
+let is_c_tree_poly_term = function
+  | C_poly_term _ -> true
+  | _ -> false;;
+
+let is_c_tree_fixed_term = function
+  | C_fixed_term _ -> true
+  | _ -> false;;
+
+let extract_c_tree_term = function
+  | C_poly_term tm | C_fixed_term tm -> tm
+  | _ -> failwith "extract_c_term: No term";;
+
+let is_p_tree_app = function
+  | P_app _ -> true
+  | _ -> false;;
+
+let is_p_tree_fixed_term = function
+  | P_fixed_term _ -> true
+  | _ -> false;;
+
+
+(*********************)
+
+let app_table : (string, app_entry) Hashtbl.t = Hashtbl.create 100;;
+
+let find_all_apps = Hashtbl.find_all app_table;;
+
+let find_app =
+  let eval_app arg_types app =
+    try
+      let m1 = List.fold_right2 type_match app.app_def.arg_types arg_types [] in
+      let m2 = filter (fun (a, b) -> a <> b) m1 in
+	length m2
+    with Failure _ -> 10000 in
+    fun name arg_types ->
+      try
+	let apps = find_all_apps name in
+	let vals = map (eval_app arg_types) apps in
+	let list = zip vals apps in
+	  hd (sort (fun (r1, _) (r2, _) -> r1 <= r2) list)
+      with Failure _ -> raise Not_found;;
+
+let find_app_tm tm =
+  let op, args = strip_comb tm in
+  let name = (fst o dest_const) op in
+  let types = map type_of args in
+    find_app name types;;
+
+let add_app name arg_types op_fun =
+  let app_def = {
+    op_name = name;
+    arg_types = arg_types;
+    op_fun = op_fun
+  } in
+  let app = {
+    app_def = app_def;
+    app_data = None;
+  } in
+  let r, existing_app =
+    try find_app name arg_types with Not_found -> (1, app) in
+    if r = 0 then
+      existing_app
+    else
+      let _ = Hashtbl.add app_table name app in
+	app;;
+
+
+(*********************)
+
+(* args is a list of pairs of names and types *)
+let build_c_tree args =
+  let build_var var_tm =
+    let name, ty = dest_var var_tm in
+    let ty_arg = assoc name args in
+      if ty_arg <> ty then
+	failwith (sprintf "build_c_tree: incompatible type for the variable %s" name)
+      else
+	(name, index (name, ty) args) in
+  let build_term tm =
+    let ty = type_of tm in
+      if tyvars ty = [] then
+	C_fixed_term tm
+      else
+	C_poly_term tm in
+  let rec build tm =
+    match tm with
+      | Var _ ->
+	  let name, i = build_var tm in
+	    C_var (name, i)
+      | Const _ -> build_term tm
+      | Abs _ ->
+	  failwith (sprintf "build_c_tree: Abs not supported (%s)" (string_of_term tm))
+      | Comb (ltm, rtm) ->
+	  let op, args = strip_comb tm in
+	  let arg_types = map type_of args in
+	    begin
+	      match op with
+		| Var _ ->
+		    let arg_trees = map build args in
+		    let name, i = build_var op in
+		      C_var_app ((name, i), arg_trees)
+		| Const (name, _) ->
+		    begin
+		      try
+			let _, app = find_app name arg_types in
+			let arg_trees = map build args in
+			  C_app (app.app_def, arg_trees)
+		      with Not_found ->
+			C_app_term (build ltm, build rtm)
+		    end
+		| _ -> C_app_term (build ltm, build rtm)
+	    end in
+    build;;
+
+
+let rec optimize_c_tree = function
+  | C_app_term (t1, t2) ->
+      let t1' = optimize_c_tree t1 and
+	  t2' = optimize_c_tree t2 in
+	begin
+	  match t1' with
+	    | C_fixed_term tm1 | C_poly_term tm1 ->
+		begin
+		  match t2' with
+		    | C_fixed_term tm2 ->
+			if is_c_tree_fixed_term t1' then
+			  C_fixed_term (mk_comb (tm1, tm2))
+			else
+			  C_poly_term (mk_comb (tm1, tm2))
+		    | C_poly_term tm2 ->
+			C_poly_term (mk_comb (tm1, tm2))
+		    | _ -> C_app_term (t1', t2')
+		end
+	    | _ -> C_app_term (t1', t2')
+	end
+  | C_app (def, args) ->
+      let args' = map optimize_c_tree args in
+	C_app (def, args')
+  | C_var_app (var, args) ->
+      let args' = map optimize_c_tree args in
+	C_var_app (var, args')
+  | _ as tree -> tree;;
+
+
+let debug_counter = ref 0;;
+
+let eval_c_tree tree ti vars =
+  let rec eval = function
+    | C_fixed_term tm -> REFL tm
+    | C_poly_term tm -> REFL (inst ti tm)
+    | C_app_term (t1, t2) ->
+	MK_COMB (eval t1, eval t2)
+    | C_var (_, index) -> REFL (List.nth vars index)
+    | C_app (def, arg_trees) ->
+	begin
+	  let arg_eqs = map eval arg_trees in
+	  let arg_vals = map (rand o concl) arg_eqs in
+	    try
+	      let app_eq = def.op_fun arg_vals in
+	      let op_tm = (fst o strip_comb o lhand o concl) app_eq in
+	      let eq = List.fold_left (curry MK_COMB) (REFL op_tm) arg_eqs in
+		try
+		  TRANS eq app_eq
+		with Failure msg ->
+		  let _ = remark (sprintf "TRANS FAILED: eq = %s\n\tapp_eq = %s"
+				    (string_of_thm eq) (string_of_thm app_eq)) in
+		    failwith msg
+	    with Failure msg ->
+	      failwith (sprintf "eval_c_tree: op = %s; %s" def.op_name msg)
+	end
+  | C_var_app ((_, index), arg_trees) ->
+      begin
+	try
+	  let arg_eqs = map eval arg_trees in
+	  let arg_vals = map (rand o concl) arg_eqs in
+	  let arg_types = map type_of arg_vals in
+	  let var = List.nth vars index in
+	  let eq = List.fold_left (curry MK_COMB) (REFL var) arg_eqs in
+	  let name, _ = dest_const var in
+	  let _, app = find_app name arg_types in
+	  let app_eq = app.app_def.op_fun arg_vals in
+	    TRANS eq app_eq
+	with Failure msg ->
+	  let _ = remark (sprintf "C_var_app FAILED: %s" msg) in
+	    failwith msg
+      end in
+    eval tree;;
+
+
+(****************************)
+(* p_tree *)
+
+let rec build_p_tree tm =
+  match tm with
+    | Var (name, ty) -> 
+	if tyvars ty = [] then
+	  P_fixed_var tm
+	else
+	  P_poly_var (name, ty)
+    | Const (name, ty) -> 
+	if tyvars ty = [] then
+	  P_fixed_term tm
+	else
+	  if can dest_fun_ty ty then
+	    P_func_const name
+	  else
+	    P_poly_const (name, ty)
+    | Comb (tm1, tm2) ->
+	let t1 = build_p_tree tm1 and
+	    t2 = build_p_tree tm2 in
+	  P_app (t1, t2)
+    | Abs _ -> failwith "build_p_tree: Abs";;
+
+
+let rec optimize_p_tree =
+  let dest_fixed_term = function
+    | P_fixed_term tm -> tm
+    | _ -> failwith "dest_fixed_term" in
+    fun tree ->
+      match tree with
+	| P_app (t1, t2) ->
+	    begin
+	      try
+		let tm1 = dest_fixed_term (optimize_p_tree t1) and
+		    tm2 = dest_fixed_term (optimize_p_tree t2) in
+		  P_fixed_term (mk_comb (tm1, tm2))
+	      with Failure _ -> tree
+	    end
+	| _ -> tree;;
+
+let rec get_p_tree_vars = function
+  | P_fixed_var tm -> [dest_var tm]
+  | P_poly_var (name, ty) -> [name, ty]
+  | P_app (t1, t2) ->
+      let vars1 = get_p_tree_vars t1 and
+	  vars2 = get_p_tree_vars t2 in
+	vars1 @ vars2
+  | _ -> [];;
+
+exception Pattern_failure of string;;
+
+let rec eval_p_tree0 tree tm =
+  match tree with
+    | P_fixed_var var -> [tm, var]
+    | P_fixed_term tm2 ->
+	if tm = tm2 then [] else raise (Pattern_failure "eval_p_tree0: unequal terms")
+    | P_poly_var (name, ty) -> [tm, mk_var (name, ty)]
+    | P_func_const name | P_poly_const (name, _) ->
+	if ((fst o dest_const) tm = name) then
+	  []
+	else
+	  raise (Pattern_failure "eval_p_tree0: different constants")
+    | P_app (t1, t2) ->
+	let ltm, rtm = dest_comb tm in
+	let inst1 = eval_p_tree0 t1 ltm and
+	    inst2 = eval_p_tree0 t2 rtm in
+	  inst1 @ inst2;;
+
+let rec eval_p_tree tree tm types =
+  try
+    match tree with
+      | P_fixed_var var -> [tm, var], types
+      | P_fixed_term tm2 ->
+	  if tm = tm2 then 
+	  [], types 
+	  else 
+	    raise (Pattern_failure "eval_p_tree: unequal terms")
+      | P_func_const name ->
+	  if ((fst o dest_const) tm = name) then
+	    [], types
+	  else
+	    raise (Pattern_failure "eval_p_tree: different functional constants")
+      | P_poly_var (name, ty) -> 
+	  let tm_type = type_of tm in
+	    [tm, mk_var (name, tm_type)], type_match ty tm_type types
+      | P_poly_const (name, ty) ->
+	  let tm_name, tm_type = dest_const tm in
+	    if (tm_name = name) then
+	      [], type_match ty tm_type types
+	    else
+	      raise (Pattern_failure "eval_p_tree: different constants")
+      | P_app (t1, t2) ->
+	  let ltm, rtm = dest_comb tm in
+	  let inst1, ty_inst1 = eval_p_tree t1 ltm types in
+	  let inst2, ty_inst2 = eval_p_tree t2 rtm ty_inst1 in
+	    inst1 @ inst2, ty_inst2
+  with Failure msg -> raise (Pattern_failure msg);;
+
+
+let eval_p_trees p_trees args =
+  List.fold_left2 (fun (inst, ty_inst) pat arg ->
+		     let inst2, ty_inst2 = eval_p_tree pat arg ty_inst in
+		       inst @ inst2, ty_inst2) ([], []) p_trees args;;
+
+
+let build_eval_simple_fixed th =
+  let th0 = SPEC_ALL th in
+  let lhs, rhs = (dest_eq o concl) th0 in
+  let _, args0 = strip_comb lhs in
+  let pats = map (optimize_p_tree o build_p_tree) args0 in
+  let vars = flat (map get_p_tree_vars pats) in
+  let comp = (optimize_c_tree o build_c_tree vars) rhs in
+    fun args ->
+      let inst_list = flat (map2 eval_p_tree0 pats args) in
+      let args = (fst o unzip) inst_list in
+      let def_th = INST inst_list th0 in
+      let eq_th = eval_c_tree comp [] args in
+	TRANS def_th eq_th;;
+
+
+let build_eval_simple_poly th =
+  let th0 = SPEC_ALL th in
+  let lhs, rhs = (dest_eq o concl) th0 in
+  let _, args0 = strip_comb lhs in
+  let pats = map (optimize_p_tree o build_p_tree) args0 in
+  let vars = flat (map get_p_tree_vars pats) in
+  let comp = (optimize_c_tree o build_c_tree vars) rhs in
+  let eval args =
+    let inst_list, ty_inst = eval_p_trees pats args in
+    let args = (fst o unzip) inst_list in
+    let def_th = (INST inst_list o INST_TYPE ty_inst) th0 in
+    let eq_th = eval_c_tree comp ty_inst args in
+      TRANS def_th eq_th in
+    eval;;
+
+
+
+
+(***********************)
+
+type cond_select_tree =
+    A_fail
+  | A_success of compiled_def
+  | A_cond of c_tree * (cond_select_tree * cond_select_tree * cond_select_tree);;
+
+
+let eval_cond_tree cond_tree ti arg_tms =
+  let rec eval cs = function
+    | A_fail -> failwith "eval_cond_tree: A_fail"
+    | A_success def -> (cs, def)
+    | A_cond (comp, (true_next, false_next, fail_next)) ->
+	let th = eval_c_tree comp ti arg_tms in
+	let result = (fst o dest_const o rand o concl) th in
+	  try
+	    if result = "T" then
+	      eval (th :: cs) true_next
+	    else
+	      eval (th :: cs) false_next
+	  with Failure _ ->
+	    eval cs fail_next in
+    eval [] cond_tree;;
+
+
+type build_a_tree_type = {
+  a_def : compiled_def;
+  a_conds : (term * (bool * c_tree)) list;
+};;
+
+let rec count p = function
+  | [] -> 0
+  | h :: t -> (if p h then 1 else 0) + count p t;;
+
+let find_max cmp list =
+  let rec find v = function
+    | [] -> v
+    | h :: t -> if cmp v h then find h t else find v t in
+    find (hd list) (tl list);;
+    
+
+let remove_cond_tm tm = 
+  map (fun c -> {c with a_conds = filter (fun (x, _) -> x <> tm) c.a_conds});;
+
+let get_max_cond_tm cs =
+  let all_tms = (setify o flat o map (fun c -> fst (unzip c.a_conds))) cs in
+  let rank tm = count (fun c -> exists (fun (x, _) -> x = tm) c.a_conds) cs in
+  let list = zip (map rank all_tms) all_tms in
+  let _, tm = find_max (fun (x,_) (y,_) -> x < y) list in
+    tm;;
+
+let cond_flag tm cond = (fst o snd) (find (fun (x, _) -> x = tm) cond.a_conds);;
+let cond_comp tm cond = (snd o snd) (find (fun (x, _) -> x = tm) cond.a_conds);;
+let partition_conds_with_tm tm cs = 
+  let cs1, cs2 = partition (fun c -> exists (fun (x, _) -> x = tm) c.a_conds) cs in
+  let pos, neg = partition (cond_flag tm) cs1 in
+    (pos, neg), cs2;;
+
+let find_satisfied_arg = find (fun c -> length c.a_conds = 0);;
+
+let rec build_cond_tree cs =
+  if length cs = 0 then A_fail 
+  else try
+    let s = find_satisfied_arg cs in
+      A_success s.a_def
+  with Failure _ ->
+    let tm = get_max_cond_tm cs in
+    let (pos, neg), conds2 = partition_conds_with_tm tm cs in
+    let next_pos = remove_cond_tm tm pos and
+	next_neg = remove_cond_tm tm neg in
+    let comp = cond_comp tm (hd (pos @ neg)) in
+    let t_pos = build_cond_tree next_pos and
+	t_neg = build_cond_tree next_neg and
+	t_fail = build_cond_tree conds2 in
+      A_cond (comp, (t_pos, t_neg, t_fail));;
+
+(*************************)  
+
+let process_lhs ths =
+  let lhss = map (lhand o concl) ths in
+  let ops0, args = unzip (map strip_comb lhss) in
+  let arg_types0 = map (map type_of) args in
+  let arg_types = setify arg_types0 and
+      ops = setify ops0 in
+    if length arg_types = 1 && length ops = 1 then
+      let name = (fst o dest_const o hd) ops in
+	name, hd arg_types
+    else
+      failwith "Unconsistent definitions: check types of all arguments, they should be exactly the same";;
+
+let rewrite_cond th eq_th =
+  let ltm, rtm = dest_comb (concl th) in
+  let imp_tm = rator ltm in
+  let th2 = AP_THM (AP_TERM imp_tm eq_th) rtm in
+    EQ_MP th2 th;;
+
+let disch_special =
+  let eq_t = TAUT `P <=> (P <=> T)` and
+      eq_f = TAUT `~P <=> (P <=> F)` and
+      eq_refl = TAUT `P <=> P` in
+    fun tm th ->
+      let th1 = DISCH tm th in
+      let p_tm, eq_th0 =
+	try
+	  let lhs, rhs = dest_eq tm in
+	    begin
+	      match rhs with
+		| Const ("T", bool_ty) -> tm, eq_refl
+		| Const ("F", bool_ty) -> tm, eq_refl
+		| _ -> tm, eq_t
+	    end
+	with Failure _ ->
+	  if is_neg tm then rand tm, eq_f else tm, eq_t in
+      let eq_th = INST[p_tm, `P:bool`] eq_th0 in
+	rewrite_cond th1 eq_th;;
+
+let process_th th =
+  let th0 = SPEC_ALL th in
+  let lhs, rhs = (dest_eq o concl) th0 in
+  let op, args = strip_comb lhs in
+  let pats = map (optimize_p_tree o build_p_tree) args in
+  let vars = flat (map get_p_tree_vars pats) in
+  let comp = (optimize_c_tree o build_c_tree vars) rhs in
+  let hyps = hyp th0 in
+  let aux tm (th, conds) =
+    let th1 = disch_special tm th in
+    let ltm, _ = (dest_imp o concl) th1 in
+    let cond_tm = lhand ltm in
+    let cond_tree = (optimize_c_tree o build_c_tree vars) cond_tm in
+      th1, (ltm, cond_tree) :: conds in
+  let def, conds = List.fold_right aux hyps (th0, []) in
+    {
+      name = (fst o dest_const) op;
+      def_th = UNDISCH_ALL def;
+      arg_patterns = pats;
+      comp = comp;
+      conditions = conds;
+    };;
+
+
+let group_eq_sorted cmp =
+  let rec group acc = function
+    | a :: b :: t ->
+	if cmp a b = 0 then 
+	  group (a :: acc) (b :: t)
+	else
+	  rev (a :: acc) :: group [] (b :: t)
+    | [a] -> [rev (a :: acc)]
+    | _ -> [] in
+    group [];;
+
+let group_eq cmp list =
+  let s = List.sort cmp list in
+    group_eq_sorted cmp s;;
+
+
+let build_a_tree def =
+  let t_tm = `T` in
+  let tms0, trees = unzip def.conditions in
+  let tms, bool_tms = unzip (map (fun tm -> lhand tm, rand tm = t_tm) tms0) in
+    {
+      a_def = def;
+      a_conds = zip tms (zip bool_tms trees)
+    };;
+
+let process_defs defs =
+  let p_defs = group_eq (fun d1 d2 -> compare d1.arg_patterns d2.arg_patterns) defs in
+  let cond_trees = map (fun ds ->
+			  let a_trees = map build_a_tree ds in
+			    (hd ds).arg_patterns, build_cond_tree a_trees) p_defs in
+    cond_trees;;
+
+let rec find_compiled_thm pc_defs args =
+  match pc_defs with
+    | [] -> failwith (sprintf "find_compiled_thm: %s"
+			(String.concat "; " (map string_of_term args)))
+    | (pat, cond_tree) :: ts ->
+	try
+	  (* Pattern matching *)
+	  let inst_list, inst_ty = eval_p_trees pat args in
+	  let cond_ths, def = eval_cond_tree cond_tree inst_ty args in
+	  let def_th = if inst_ty = [] then def.def_th else INST_TYPE inst_ty def.def_th in
+	  let th = INST inst_list def_th in
+	    (* MP conditions *)
+	  let th1 = List.fold_right PROVE_HYP cond_ths th in
+	    def, inst_ty, inst_list, th1
+	with Pattern_failure _ ->
+	  find_compiled_thm ts args;;
+
+let sprint_vlist list = 
+  String.concat ";" 
+    (map (fun (a, b) -> sprintf "(%s, %s)" (string_of_term a) (string_of_term b)) list);;
+
+exception Not_defined;;
+
+let eval2 ths =
+  let name, arg_types = process_lhs ths in
+  let dummy _ = raise Not_defined in
+  let entry = add_app name arg_types dummy in
+  let defs = map process_th ths in
+  let pc_defs = process_defs defs in
+
+  let eval = fun args ->
+(*
+    let debug_id = string_of_int !debug_counter in
+    let _ = debug_counter := !debug_counter + 1 in
+*)
+    let def, inst_ty, inst_list, def_th = find_compiled_thm pc_defs args in
+(*
+    let _ = println (sprintf "eval2: %s" (string_of_thm def_th)) in
+*)
+(*
+    let _ = println (sprintf "eval2 (%s): %s" debug_id name) in
+*)
+
+    let matched_args = (fst o unzip) inst_list in
+
+(*
+    let _ = println (sprintf "eq_th eval: %s" debug_id) in
+*)
+
+    let eq_th = eval_c_tree def.comp inst_ty matched_args in
+
+(*
+    let _ = println (sprintf "eq_th done: %s" debug_id) in
+*)
+
+      TRANS def_th eq_th in
+  let _ = entry.app_def.op_fun <- eval in
+  let _ = entry.app_data <- Some defs in
+    pc_defs, eval;;
+
+(*
+let pc, fact_eval = eval2 ths;;
+fact_eval [`50`];;
+
+
+process_defs;;
+
+let pc = process_defs defs;;
+find_compiled_thm pc [`0`];;
+
+defs;;
+
+
+process_defs defs;;
+
+let fact = prove(`!n. FACT n = if n = 0 then 1 else n * FACT (PRE n)`,
+		 INDUCT_TAC THEN REWRITE_TAC[FACT; NOT_SUC; PRE]);;
+let fact1 = REWRITE_CONV[FACT] `FACT 0`;;
+
+let ths = prepare_for_eval fact @ [fact1];;
+let th1 = List.nth (CONJUNCTS LENGTH) 1;;
+process_th th1;;
+let defs = map process_th ths;;
+let defs1 = map process_th (CONJUNCTS LENGTH);;
+
+
+let th = List.nth ths 1;;
+
+  
+let s = [1,"a"; 1,"b"; 2, "c"; 1, "d"];;
+List.sort (fun (a,_) (b,_) -> compare a b) s;;
+sort (fun (a,_) (b,_) -> compare a b < 0) s;;
+group_eq (fun (n1,_) (n2,_) -> compare n1 n2) [2,"x";1,"a"; 1,"b"; 2, "c"; 1, "d"];;
+
+
+let a_trees = map build_a_tree defs;;
+build_cond_tree a_trees;;
+
+
+
+exception Match_exception;;
+
+let rec find_compiled_thm =
+  let eval_cond th cond =
+    let cond_eq_tm = (lhand o concl) th in
+    let cond_tm = lhand cond_eq_tm in
+  
+(*   
+    let _ = remark (sprintf "Evaluating cond: %s" (string_of_term cond_tm)) in
+*)
+    
+    let cond_th = eval_c_tree cond cond_tm in
+      try
+	MP th cond_th
+      with Failure _ -> raise Match_exception in
+    fun defs args ->
+      match defs with
+	| [] -> failwith (sprintf "find_compiled_thm: %s" 
+			    (String.concat "; " (map string_of_term args)))
+	| def :: ts ->
+	    try
+	      (* Pattern matching *)
+	      let inst_list, inst_ty = eval_p_trees def.arg_patterns args in
+	      let def_th = if inst_ty = [] then def.def_th else INST_TYPE inst_ty def.def_th in
+	      let th = INST inst_list def_th in
+		
+	      (* Eval conditions *)
+	      let th1 = List.fold_left eval_cond th def.conditions in
+		def, th1
+	    with Pattern_failure _ | Match_exception ->
+	      find_compiled_thm ts args;;
+
+
+let sprint_vlist list = 
+  String.concat ";" 
+    (map (fun (a, b) -> sprintf "(%s, %s)" (string_of_term a) (string_of_term b)) list);;
+
+exception Not_defined;;
+
+let eval2 ths =
+  let name, arg_types = process_lhs ths in
+  let dummy _ = raise Not_defined in
+  let entry = add_app name arg_types dummy in
+  let defs = map process_th ths in
+
+  let eval = fun args ->
+(*
+    let debug_id = string_of_int !debug_counter in
+    let _ = debug_counter := !debug_counter + 1 in
+*)
+    let def, def_th = find_compiled_thm defs args in
+(*
+    let _ = println (sprintf "eval2: %s" (string_of_thm def_th)) in
+*)
+(*
+    let _ = println (sprintf "eval2 (%s): %s" debug_id name) in
+*)
+
+    let rhs_tm = (rand o concl) def_th in
+
+(*
+    let _ = println (sprintf "eq_th eval: %s" debug_id) in
+*)
+
+    let eq_th = eval_c_tree def.comp rhs_tm in
+
+(*
+    let _ = println (sprintf "eq_th done: %s" debug_id) in
+*)
+
+      TRANS def_th eq_th in
+  let _ = entry.app_def.op_fun <- eval in
+  let _ = entry.app_data <- Some defs in
+    defs, eval;;
+
+*)
+
+
+(*********************************)
+
+let prepare_for_eval =
+  let rec elim_conds th =
+    try
+      let ths = CONJUNCTS (CONV_RULE COND_ELIM_CONV th) in
+	flat (map elim_conds ths)
+    with Failure _ -> [th] in
+    fun th ->
+      let th1 = SPEC_ALL th in
+      let conv = PURE_REWRITE_CONV[GSYM IMP_IMP] in
+      let ths = map (UNDISCH_ALL o CONV_RULE conv) (elim_conds th1) in
+	ths;;
+
+let build_eval ths =
+  let ths1 = flat (map CONJUNCTS ths) in
+  let ths2 = flat (map prepare_for_eval ths1) in
+    eval2 ths2;;
+
+
+
+(*******************)
+
+let add_num = 
+  let op = `(+):num->num->num` in
+    function
+      | [x; y] -> NUM_ADD_CONV (mk_binop op x y)
+      | _ -> failwith "add_num";;
+
+let sub_num = 
+  let op = `(-):num->num->num` in
+    function
+      | [x; y] -> NUM_SUB_CONV (mk_binop op x y)
+      | _ -> failwith "sub_num";;
+
+let mul_num = 
+  let op = `( * ):num->num->num` in
+    function
+      | [x; y] -> NUM_MULT_CONV (mk_binop op x y)
+      | _ -> failwith "mul_num";;
+
+let div_num = 
+  let op = `(DIV):num->num->num` in
+    function
+      | [x; y] -> NUM_DIV_CONV (mk_binop op x y)
+      | _ -> failwith "div_num";;
+
+let lt_num = 
+  let op = `(<):num->num->bool` in
+    function
+      | [x; y] -> NUM_LT_CONV (mk_binop op x y)
+      | _ -> failwith "lt_num";;
+
+let gt_num = 
+  let op = `(>):num->num->bool` in
+    function
+      | [x; y] -> NUM_GT_CONV (mk_binop op x y)
+      | _ -> failwith "gt_num";;
+
+let le_num = 
+  let op = `(<=):num->num->bool` in
+    function
+      | [x; y] -> NUM_LE_CONV (mk_binop op x y)
+      | _ -> failwith "le_num";;
+
+let ge_num = 
+  let op = `(>=):num->num->bool` in
+    function
+      | [x; y] -> NUM_GE_CONV (mk_binop op x y)
+      | _ -> failwith "ge_num";;
+
+let eq_num = 
+  let op = `(=):num->num->bool` in
+    function
+      | [x; y] -> NUM_EQ_CONV (mk_binop op x y)
+      | _ -> failwith "eq_num";;
+
+let suc_num =
+  let op = `SUC` in
+    function
+      | [x] -> NUM_SUC_CONV (mk_comb (op, x))
+      | _ -> failwith "suc_num";;
+
+let pre_num =
+  let op = `PRE` in
+    function
+      | [x] -> NUM_PRE_CONV (mk_comb (op, x))
+      | _ -> failwith "pre_num";;
+
+let build_app_table () =
+  let _ = Hashtbl.clear app_table in
+  let num_ty = `:num` in
+  let a2 name op = let _ = add_app name [num_ty; num_ty] op in () and
+      a1 name op = let _ = add_app name [num_ty] op in () in
+    a2 "+" add_num;
+    a2 "-" sub_num;
+    a2 "*" mul_num;
+    a2 "DIV" div_num;
+    a2 "<" lt_num;
+    a2 ">" gt_num;
+    a2 "<=" le_num;
+    a2 ">=" ge_num;
+    a2 "=" eq_num;
+    a1 "SUC" suc_num;
+    a1 "PRE" pre_num;;
+
+build_app_table();;
+
+
+end;;

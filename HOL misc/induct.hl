@@ -1,0 +1,100 @@
+let predA = new_definition `predA k P <=> (!i. i <= k ==> P i) 
+  /\ !n. (!i. i <= k ==> P (n + i)) ==> P (n + k + 1)`;;
+
+let predA_imp_strong = prove(`predA k P ==> (!n. (!m. m < n ==> P m) ==> P n)`,
+   REWRITE_TAC[predA] THEN REPEAT STRIP_TAC THEN REPEAT (POP_ASSUM MP_TAC) THEN
+     MAP_EVERY (fun a -> DISCH_THEN (LABEL_TAC a)) ["h1"; "h2"; "h3"] THEN
+     DISJ_CASES_TAC (ARITH_RULE `n <= k \/ k < n`) THENL [
+       REMOVE_THEN "h1" MATCH_MP_TAC THEN ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `n = (n - k - 1) + k + 1` (fun th -> ONCE_REWRITE_TAC[th]) THENL [
+       POP_ASSUM MP_TAC THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     REMOVE_THEN "h2" MATCH_MP_TAC THEN REPEAT STRIP_TAC THEN
+     FIRST_X_ASSUM MATCH_MP_TAC THEN
+     POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN ARITH_TAC);;
+
+let predA_imp_all = prove(`predA k P ==> (!n. P n)`,
+			  DISCH_THEN (ASSUME_TAC o MATCH_MP predA_imp_strong) THEN
+			    MATCH_MP_TAC num_WF THEN ASM_REWRITE_TAC[]);;
+
+let predA_imp_other = prove(`!P k1 k2. predA k1 P ==> predA k2 P`,
+   REPEAT GEN_TAC THEN DISCH_THEN (ASSUME_TAC o MATCH_MP predA_imp_all) THEN
+     REWRITE_TAC[predA] THEN REPEAT STRIP_TAC THEN ASM_REWRITE_TAC[]);;
+
+let predA_eq = prove(`!P k1 k2. predA k1 P <=> predA k2 P`,
+   REPEAT GEN_TAC THEN EQ_TAC THEN REWRITE_TAC[predA_imp_other]);;
+
+
+(* Computational approach to predA *)
+let nseq = define `!n. nseq 0 = [0] /\ nseq (SUC n) = CONS (SUC n) (nseq n)`;;
+
+let it_conj = new_definition `it_conj P n k = ITLIST (\i b. b /\ P (n + i)) (nseq k) T`;;
+
+let pred_a = new_definition `pred_a k P = (it_conj P 0 k /\ (!n. it_conj P n k ==> P (n + k + 1)))`;;
+
+let mem_nseq = prove(`!n i. MEM i (nseq n) <=> i <= n`,
+   INDUCT_TAC THEN ASM_REWRITE_TAC[nseq; MEM] THEN ARITH_TAC);;
+
+let it_conj0 = prove(`!P n. it_conj P n 0 <=> P n`,
+   REWRITE_TAC[it_conj; nseq; ITLIST; ADD_0]);;
+
+let it_conj_suc = prove(`!P n k. it_conj P n (SUC k) <=> it_conj P n k /\ P (n + k + 1)`,
+   GEN_TAC THEN INDUCT_TAC THEN REWRITE_TAC[GSYM ADD1; it_conj; nseq; ITLIST]);;
+
+let it_conj_imp = prove(`!P n k i. it_conj P n k /\ n <= i /\ i <= n + k ==> P i`,
+   GEN_TAC THEN GEN_TAC THEN 
+     INDUCT_TAC THEN REWRITE_TAC[it_conj0; it_conj_suc] THEN REPEAT STRIP_TAC THENL [
+       SUBGOAL_THEN `i = n:num` ASSUME_TAC THENL [
+	 POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN ARITH_TAC;
+	 ASM_REWRITE_TAC[]
+       ];
+       ALL_TAC
+     ] THEN
+     ASM_CASES_TAC `i = n + k + 1` THENL [
+       ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     FIRST_X_ASSUM MATCH_MP_TAC THEN ASM_REWRITE_TAC[] THEN
+     POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN ARITH_TAC);;
+
+let it_conj_eq = prove(`!P n k. it_conj P n k <=> (!i. n <= i /\ i <= n + k ==> P i)`,
+   GEN_TAC THEN GEN_TAC THEN
+     INDUCT_TAC THEN ASM_REWRITE_TAC[it_conj0; it_conj_suc; ADD_0; LE_ANTISYM] THENL [
+       MESON_TAC[];
+       ALL_TAC
+     ] THEN
+     EQ_TAC THEN REPEAT STRIP_TAC THENL [
+       ASM_CASES_TAC `i = n + k + 1` THENL [ ASM_REWRITE_TAC[]; ALL_TAC ] THEN
+	 FIRST_X_ASSUM MATCH_MP_TAC THEN ASM_REWRITE_TAC[] THEN
+	 POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN ARITH_TAC;
+       FIRST_X_ASSUM MATCH_MP_TAC THEN
+	 POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN ARITH_TAC;
+       FIRST_X_ASSUM MATCH_MP_TAC THEN ARITH_TAC
+     ]);;
+
+let pred_a_eq_predA = prove(`!P k. pred_a k P <=> predA k P`,
+   REWRITE_TAC[pred_a; predA; it_conj_eq; ADD; LE_0] THEN  REPEAT GEN_TAC THEN
+     SUBGOAL_THEN `!n. (!i. n <= i /\ i <= n + k ==> P i) <=> (!i. i <= k ==> P (n + i))` ASSUME_TAC THENL [
+       GEN_TAC THEN EQ_TAC THEN REPEAT STRIP_TAC THENL [
+	 FIRST_X_ASSUM MATCH_MP_TAC THEN
+	   POP_ASSUM MP_TAC THEN ARITH_TAC;
+	 ALL_TAC
+       ] THEN
+	 FIRST_X_ASSUM (MP_TAC o SPEC `i - n`) THEN ANTS_TAC THENL [
+	   POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN ARITH_TAC;
+	   ALL_TAC
+	 ] THEN
+	 ASM_SIMP_TAC[ARITH_RULE `n <= i ==> n + i - n = i`];
+       ALL_TAC
+     ] THEN
+     ASM_REWRITE_TAC[]);;
+
+let a_imp_all = prove(`pred_a k P ==> (!n. P n)`,
+		      DISCH_TAC THEN MATCH_MP_TAC predA_imp_all THEN
+			ASM_REWRITE_TAC[GSYM pred_a_eq_predA]);;
+
+let a_eq = prove(`!P k1 k2. pred_a k1 P <=> pred_a k2 P`,
+   REWRITE_TAC[pred_a_eq_predA] THEN ACCEPT_TAC predA_eq);;

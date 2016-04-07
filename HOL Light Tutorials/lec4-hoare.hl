@@ -1,0 +1,332 @@
+needs "Examples/prog.ml";;
+
+install_parser ("correct", parse_program_assertion);;
+
+let ex_swap = prove
+  (`correct
+     (X = x /\ Y = y)
+      var X, Y, R;
+      R := X;
+      X := Y;
+      Y := R
+   end
+  (X = y /\ Y = x)`,
+  VC_TAC THEN
+    SIMP_TAC[]);;
+
+parse_as_infix("XOR", (7, "right"));;
+let XOR = new_definition `a XOR b <=> ((a \/ b) /\ ~(a /\ b))`;;
+
+let ex_xor = prove
+  (`correct
+     (X = x /\ Y = y)
+     var X, Y;
+     X := X XOR Y;
+     Y := X XOR Y;
+     X := X XOR Y
+   end
+   (X = y /\ Y = x)`,
+  VC_TAC THEN
+    REWRITE_TAC[XOR] THEN
+    MESON_TAC[]);;
+
+let ex_if = prove
+  (`correct
+     T
+     var x, y, z;
+     if x < y then z := y else z := x
+   end
+  (z >= x /\ z >= y)`,
+  VC_TAC THENL [
+    ARITH_TAC;
+    ARITH_TAC;
+  ]);;
+
+
+let ex_sqrt = prove
+  (`correct
+     T
+     var y1, y2, y3, x;
+     y1 := 0;
+     y2 := 1;
+     y3 := 1;
+     while y3 <= x do [invariant y1 EXP 2 <= x /\ y3 = (y1 + 1) EXP 2 /\ y2 = 2 * y1 + 1;
+		       measure (x + 1) - y3]
+	 (y1 := y1 + 1;
+	  y2 := y2 + 2;
+	  y3 := y3 + y2)
+   end
+   (y1 EXP 2 <= x /\ x < (y1 + 1) EXP 2)`,
+  VC_TAC THENL [
+    STRIP_TAC THEN ASM_REWRITE_TAC[] THEN ARITH_TAC;
+    ARITH_TAC;
+    ARITH_TAC
+  ]);;
+
+(* Load theorems about GCD *)
+needs "Library/prime.ml";;
+
+let ex_gcd = prove
+  (`correct
+     (a = m /\ b = n /\ ~(m = 0) /\ ~(n = 0))
+     var a, b;
+     while (~(a = b)) do [invariant gcd(a,b) = gcd(m,n) /\ ~(a = 0) /\ ~(b = 0);
+			  measure a + b]
+	 (if a < b then b := b - a else a := a - b)
+   end
+   (a = gcd(m, n))`,
+  VC_TAC THENL [
+    SIMP_TAC[];
+    MESON_TAC[GCD_REFL];
+    SIMP_TAC[] THEN REPEAT STRIP_TAC THENL [
+      ASM_MESON_TAC[GCD_SUB; LT_LE];
+      ASM_ARITH_TAC;
+      ASM_ARITH_TAC;
+    ];
+    SIMP_TAC[] THEN REPEAT STRIP_TAC THENL [
+      ASM_MESON_TAC[GCD_SUB; NOT_LT];
+      ASM_ARITH_TAC;
+      ASM_ARITH_TAC
+    ]
+  ]);;
+
+(* From Gordon's book *)
+
+let ex = prove
+  (`correct
+     ~(y = 0)
+     var r, x, y, q;
+     r := x;
+     q := 0;
+     while y <= r do [invariant x = r + y * q /\ ~(y = 0);
+		      measure r]
+	 (r := r - y;
+	  q := q + 1)
+   end
+   (r < y /\ x = r + y * q)`,
+  VC_TAC THENL [
+    SIMP_TAC[] THEN ARITH_TAC;
+    ARITH_TAC;
+    ARITH_TAC
+  ]);;
+
+let ex18 = prove
+  (`correct
+     (A * B = S /\ ~(A = 0))
+     var A, B;
+   while ~ODD A do [invariant A * B = S /\ ~(A = 0);
+		    measure A]
+       (B := 2 * B;
+	A := A DIV 2)
+   end
+  (A * B = S /\ ODD A)`,
+  VC_TAC THENL [
+    SIMP_TAC[];
+    REWRITE_TAC[NOT_ODD; EVEN_EXISTS] THEN
+      STRIP_TAC THEN ASM_REWRITE_TAC[] THEN
+      ASM_SIMP_TAC[DIV_MULT; ARITH_RULE `~(2 = 0)`] THEN
+      SUBGOAL_THEN `~(m = 0)` ASSUME_TAC THENL [ ASM_ARITH_TAC; ALL_TAC ] THEN
+      STRIP_TAC THEN TRY ASM_ARITH_TAC THEN
+      ASM_MESON_TAC[MULT_AC]
+  ]);;
+
+let ex23 = prove
+  (`correct
+     (A = x /\ N = n)
+     var A, N, P;
+     P := 1;
+     if ~(A = 0) then
+       while ~(N = 0) do [invariant P * A EXP N = x EXP n /\ ~(A = 0);
+			  measure N]
+	   (if ODD N then P := P * A;
+	    N := N DIV 2;
+	    A := A * A)
+     else
+       if ~(n = 0) then P := 0
+   end
+   (P = x EXP n)`,
+  VC_TAC THENL [
+    SIMP_TAC[MULT_CLAUSES];
+    MESON_TAC[MULT_CLAUSES; EXP];
+    REWRITE_TAC[ODD_EXISTS] THEN STRIP_TAC THEN ASM_REWRITE_TAC[] THEN
+      SUBGOAL_THEN `SUC (2 * m) DIV 2 = m` ASSUME_TAC THENL [
+	REWRITE_TAC[ADD1] THEN ONCE_REWRITE_TAC[MULT_AC] THEN
+	  SIMP_TAC[DIV_MULT_ADD; ARITH_RULE `~(2 = 0)`] THEN
+	  SIMP_TAC[DIV_LT; ARITH_RULE `1 < 2`; ADD_0];
+	ALL_TAC
+      ] THEN
+      ASM_REWRITE_TAC[MULT_EQ_0] THEN
+	CONJ_TAC THENL [ ALL_TAC; ARITH_TAC ] THEN
+	FIRST_X_ASSUM (fun th -> CHANGED_TAC (REWRITE_TAC[GSYM th])) THEN
+	ASM_REWRITE_TAC[EXP; GSYM EXP_2; GSYM EXP_MULT; MULT_AC];
+    REWRITE_TAC[NOT_ODD; EVEN_EXISTS] THEN STRIP_TAC THEN ASM_REWRITE_TAC[] THEN
+      ASM_SIMP_TAC[DIV_MULT; ARITH_RULE `~(2 = 0)`] THEN
+      ASM_REWRITE_TAC[MULT_EQ_0] THEN
+      CONJ_TAC THENL [ ALL_TAC; ASM_ARITH_TAC ] THEN
+      FIRST_X_ASSUM (fun th -> CHANGED_TAC (REWRITE_TAC[GSYM th])) THEN
+      ASM_REWRITE_TAC[GSYM EXP_2; GSYM EXP_MULT];
+    STRIP_TAC THEN
+      SUBGOAL_THEN `?m. n = SUC m /\ x = 0` STRIP_ASSUME_TAC THENL [
+	EXISTS_TAC `n - 1` THEN ASM_ARITH_TAC;
+	ALL_TAC
+      ] THEN
+      ASM_REWRITE_TAC[EXP_0];
+    SIMP_TAC[EXP]
+  ]);;
+
+let ex24 = prove
+  (`correct
+     (A = x /\ B = y)
+     var A, B, C;
+     C := 0;
+     while ~(A = 0) do [invariant A * B + C = x * y;
+			measure A]
+	 (if ODD A then C := C + B;
+	  B := B * 2;
+	  A := A DIV 2)
+   end
+   (C = x * y)`,
+  VC_TAC THENL [
+    SIMP_TAC[ADD_0];
+    CONV_TAC NUM_RING;
+    REWRITE_TAC[ODD_EXISTS] THEN STRIP_TAC THEN ASM_REWRITE_TAC[] THEN
+      SUBGOAL_THEN `SUC (2 * m) DIV 2 = m` ASSUME_TAC THENL [
+	REWRITE_TAC[ADD1] THEN ONCE_REWRITE_TAC[MULT_AC] THEN
+	  SIMP_TAC[DIV_MULT_ADD; ARITH_RULE `~(2 = 0)`] THEN
+	  SIMP_TAC[DIV_LT; ARITH_RULE `1 < 2`; ADD_0];
+	ALL_TAC
+      ] THEN
+      ASM_REWRITE_TAC[] THEN
+	CONJ_TAC THENL [ ALL_TAC; ARITH_TAC ] THEN
+	FIRST_X_ASSUM (fun th -> CHANGED_TAC (REWRITE_TAC[SYM th])) THEN
+	ASM_REWRITE_TAC[] THEN ARITH_TAC;
+    REWRITE_TAC[NOT_ODD; EVEN_EXISTS] THEN STRIP_TAC THEN ASM_REWRITE_TAC[] THEN
+      ASM_SIMP_TAC[DIV_MULT; ARITH_RULE `~(2 = 0)`] THEN
+      CONJ_TAC THENL [ ALL_TAC; ASM_ARITH_TAC ] THEN
+      FIRST_X_ASSUM (fun th -> CHANGED_TAC (REWRITE_TAC[GSYM th])) THEN
+      ASM_REWRITE_TAC[] THEN ARITH_TAC
+  ]);;
+
+
+let mc91_termination = prove
+  (`correct
+     T
+     var n, c;
+     c := 1;
+     while (c > 0) do [invariant T;
+		       measure 21 * c + (222 - 2 * n)]
+	 (if n > 100 then
+	    (n := n - 10;
+	     c := c - 1)
+	  else
+	    (n := n + 11;
+	     c := c + 1))
+   end
+   T`,
+  VC_TAC THENL [
+    ARITH_TAC;
+    ARITH_TAC
+  ]);;
+
+let mc91 = prove
+  (`correct
+     (n <= 100)
+     var n, c;
+     c := 1;
+     while (c > 0) do [invariant n <= 111 /\ (n >= 101 /\ c = 1 ==> n = 101) /\ (c = 0 ==> n = 91);
+		       measure 21 * c + (222 - 2 * n)]
+	 (if n > 100 then
+	    (n := n - 10;
+	     c := c - 1)
+	  else
+	    (n := n + 11;
+	     c := c + 1))
+   end
+   (n = 91)`,
+  VC_TAC THEN ARITH_TAC);;
+
+
+(* Nested loops *)
+
+let VC_AWHILE_MEASURE_INV = prove(
+  `!i invariant. p IMPLIES invariant /\
+    (NOT e) AND invariant IMPLIES q /\
+    (!X. correct
+       (invariant AND e AND (\s:S. X = m(s)))
+       c
+       (invariant AND (\s. m(s) < X)))
+  ==> correct p (AWHILE i (MEASURE m) e c) q`,
+    MESON_TAC[VC_AWHILE_MEASURE; AWHILE]);;
+
+
+let test = prove
+  (`correct
+     T
+     var x, y;
+     while x > 0 do [invariant T;
+		     measure x]
+	 (y := x;
+	 while y > 0 do [invariant T;
+			  measure y]
+	      (y := y - 1);
+         x := x - 1)
+   end
+   T`,
+  VC_STEP_TAC THEN
+    VC_STEP_TAC THEN
+    VC_STEP_TAC THENL [
+      MATCH_MP_TAC VC_AWHILE_MEASURE_INV THEN
+	EXISTS_TAC `\(x:num, y:num). X = x /\ x > 0` THEN
+	REPEAT CONJ_TAC THENL [
+	  VC_UNPACK_TAC THEN ARITH_TAC;
+	  VC_UNPACK_TAC THEN ARITH_TAC;
+	  ALL_TAC
+	] THEN
+	GEN_TAC THEN VC_STEP_TAC THEN ARITH_TAC;
+      ALL_TAC
+    ] THEN
+    VC_STEP_TAC);;
+
+
+let ex22 = prove
+  (`correct
+     (x = a /\ y = b)
+     var x, y, s, r;
+     s := 0;
+     while ~(x = 0) do [invariant s + x * y = a * b;
+			measure x]
+	 (r := 0;
+	  while ~(r = y) do [invariant ~(x = 0) /\ r <= y /\ s + x * y = a * b + r;
+			     measure y - r]
+	      (s := s + 1;
+	       r := r + 1);
+	  x := x - 1)
+   end
+   s = a * b`,
+  VC_STEP_TAC THEN VC_STEP_TAC THENL [
+    SIMP_TAC[ADD];
+    MESON_TAC[MULT_CLAUSES; ADD_0];
+    ALL_TAC
+  ] THEN
+    VC_STEP_TAC THEN
+    VC_STEP_TAC THENL [
+      MATCH_MP_TAC VC_AWHILE_MEASURE_INV THEN
+	EXISTS_TAC `\(x:num, y:num, s:num, r:num). X = x /\ ~(x = 0) /\ r <= y /\ s + x * y = a * b + r` THEN
+	REPEAT CONJ_TAC THEN REPEAT (FIRST [VC_UNPACK_TAC; VC_STEP_TAC; GEN_TAC]) THENL [
+	  ARITH_TAC;
+	  REPEAT STRIP_TAC THENL [
+	    REWRITE_TAC[RIGHT_SUB_DISTRIB; MULT_CLAUSES] THEN
+	      MP_TAC (ARITH_RULE `1 * y <= x * y ==> s + (x * y - y) = (s + x * y) - y`) THEN
+	      ANTS_TAC THENL [
+		REWRITE_TAC[LE_MULT_RCANCEL] THEN ASM_ARITH_TAC;
+		ALL_TAC
+	      ] THEN
+	      DISCH_THEN (fun th -> ASM_REWRITE_TAC[th]) THEN
+	      ARITH_TAC;
+	    ASM_ARITH_TAC
+	  ];
+	  ARITH_TAC
+	];
+      ALL_TAC
+    ] THEN
+    VC_STEP_TAC);;

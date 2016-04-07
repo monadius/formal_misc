@@ -1,0 +1,21 @@
+let mk_abs_eq_thm tm =
+  let vs, _ = strip_gabs tm in
+  let tm2 = list_mk_comb (tm, vs) in
+    (DEPTH_CONV GEN_BETA_CONV) tm2;;
+
+
+let tm = `\(a,b) (CONS h t). h + a + b - r`;;
+let tm1 = `\(CONS h t). APPEND t [h:A]`;;
+
+mk_abs_eq_thm tm;;
+
+let vs, b = strip_gabs tm;;
+let tm2 = list_mk_comb (tm, vs);;
+(DEPTH_CONV GEN_BETA_CONV) tm2;;
+
+
+let d_tm = dest_gabs tm;;
+mk_gabs d_tm;;
+
+strip_gabs tm;;
+GABS;;

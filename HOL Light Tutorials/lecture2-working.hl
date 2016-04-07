@@ -1,0 +1,81 @@
+(* Barber *)
+let barber_tm = `?x:A. Man(x) /\ !y:A. Man(y) ==> (Shaves x y <=> ~(Shaves y y))`;;
+
+let barber_neg = mk_comb(`~`, barber_tm);;
+let barber_eq = (REWRITE_CONV[NOT_EXISTS_THM] THENC
+		   REWRITE_CONV[DE_MORGAN_THM] THENC
+		   REWRITE_CONV[NOT_FORALL_THM] THENC
+		   REWRITE_CONV[NOT_IMP]) barber_neg;;
+
+let case1 = `Man (x:A):bool`;;
+let case2 = `~Man (x:A)`;;
+
+let c1_th = ASSUME case1;;
+let not_refl = TAUT `~(Shaves x x <=> ~Shaves (x:A) x)`;; 
+let c1_conj = CONJ c1_th not_refl;;
+let c1_exists = EXISTS (`?y:A. Man y /\ ~(Shaves x y <=> ~Shaves y y)`, `x:A`) c1_conj;;
+
+let c2_th = ASSUME case2;;
+
+let th1 = DISJ1 c1_exists (concl c2_th);;
+let th2 = DISJ2 (concl c1_exists) c2_th;;
+
+let cases_th = SPEC case1 EXCLUDED_MIDDLE;;
+
+let r1 = DISJ_CASES cases_th th1 th2;;
+let r2 = ONCE_REWRITE_RULE[DISJ_ACI] r1;;
+
+REWRITE_RULE[r2] barber_eq;;
+
+
+(* Drinker *)
+let drinker_tm = `?a:A. (D a ==> !x. D x)`;;
+
+let case1 = `!x:A. D x`;;
+let case2 = `~(!x:A. D x)`;;
+let case_th = SPEC case1 EXCLUDED_MIDDLE;;
+
+let c1_th = ASSUME case1;;
+let imp_th = TAUT `!P Q. P ==> (Q ==> P)`;;
+let c1_imp0 = MATCH_MP imp_th c1_th;;
+let c1_imp = SPEC `D (a:A):bool` c1_imp0;;
+let c1_exists = EXISTS (drinker_tm, `a:A`) c1_imp;;
+
+let c2_th = ASSUME case2;;
+let c2_eq = REWRITE_RULE[NOT_FORALL_THM] c2_th;;
+let c2_select = SELECT_RULE c2_eq;;
+let c2_disj = DISJ1 c2_select case1;;
+let imp_def = TAUT `~A \/ B <=> (A ==> B)`;;
+let c2_imp = REWRITE_RULE[imp_def] c2_disj;;
+let c2_exists = EXISTS (drinker_tm, `@x:A. ~D x`) c2_imp;;
+
+DISJ_CASES case_th c1_exists c2_exists;;
+
+
+(* Backward proofs *)
+let barber = prove(`~(?x:A. Man(x) /\ !y:A. Man(y) ==> (Shaves x y <=> ~(Shaves y y)))`,
+  REWRITE_TAC[NOT_EXISTS_THM; DE_MORGAN_THM; NOT_FORALL_THM; NOT_IMP] THEN
+    GEN_TAC THEN
+    ASM_CASES_TAC `Man (x:A):bool` THENL
+    [
+      DISJ2_TAC THEN
+	EXISTS_TAC `x:A` THEN
+	ASM_REWRITE_TAC[] THEN
+	CONV_TAC TAUT;
+      ASM_REWRITE_TAC[]
+    ]);;
+    
+
+let drinker = prove(`?x:A. D x ==> !x. D x`,
+  ASM_CASES_TAC `!x:A. D x` THENL
+    [
+      EXISTS_TAC `y:A` THEN
+	DISCH_TAC THEN
+	ASM_REWRITE_TAC[];
+      ALL_TAC
+    ] THEN
+    POP_ASSUM MP_TAC THEN
+    REWRITE_TAC[NOT_FORALL_THM] THEN
+    STRIP_TAC THEN
+    EXISTS_TAC `x:A` THEN
+    ASM_REWRITE_TAC[]);;

@@ -1,0 +1,69 @@
+`1 + 1`;;
+
+type_of `1 + 1`;;
+
+type_of `a:real`;;
+type_of `p:bool`;;
+
+ASSUME `p:bool`;;
+
+REFL `p:bool`;;
+REFL `1 + 1`;;
+REFL `1 = 1`;;
+
+let th = ASSUME `p:bool`;;
+
+DISCH `p:bool` th;;
+let th2 = DISCH `q:bool` th;;
+DISCH_ALL th2;;
+
+g `p ==> p`;;
+
+e (DISCH_TAC);;
+
+e (ASM_REWRITE_TAC[]);;
+
+let result = top_thm();;
+
+
+let result = prove
+  (`!p. p ==> p`,
+   REPEAT STRIP_TAC);;
+
+TAUT `(p ==> (q ==> r)) ==> ((p ==> q) ==> (p ==> r))`;;
+
+let lemma = TAUT `(T ==> P) <=> P`;;
+
+let result2 = prove
+  (`(p ==> (q ==> r)) ==> ((p ==> q) ==> (p ==> r))`,
+   ASM_CASES_TAC `p:bool` THENL [
+     PURE_ASM_REWRITE_TAC[] THEN
+       PURE_REWRITE_TAC[lemma] THEN
+       REWRITE_TAC[];
+     PURE_ASM_REWRITE_TAC[] THEN
+       PURE_REWRITE_TAC[TAUT `(F ==> P) <=> T`] THEN
+       REPEAT STRIP_TAC
+   ]);;
+
+let result2 = prove
+  (`(p ==> (q ==> r)) ==> ((p ==> q) ==> (p ==> r))`,
+   ASM_CASES_TAC `p:bool` THEN ASM_REWRITE_TAC[]);;
+
+
+let ineq = prove
+  (`!n. 1 <= 2 EXP n`,
+   INDUCT_TAC THENL [
+     ARITH_TAC;
+     REWRITE_TAC[EXP] THEN
+       ASM_ARITH_TAC
+   ]);;
+
+let ineq1 = prove
+  (`!n. n <= 2 EXP n`,
+   INDUCT_TAC THENL [
+     ARITH_TAC;
+     REWRITE_TAC[EXP] THEN
+       REWRITE_TAC[ARITH_RULE `SUC n <= 2 * 2 EXP n <=> n + 1 <= 2 EXP n + 2 EXP n`] THEN
+       MATCH_MP_TAC LE_ADD2 THEN
+       ASM_REWRITE_TAC[ineq]
+   ]);;

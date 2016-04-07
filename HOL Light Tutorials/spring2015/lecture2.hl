@@ -1,0 +1,103 @@
+let length = define
+  `length [] = 0 /\
+   length (CONS h t) = 1 + length t`;;
+
+let cat = define
+  `cat [] b = b /\
+   cat (CONS h t) b = CONS h (cat t b)`;;
+
+let cat0 = prove
+  (`!a. cat a [] = a`,
+   LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[cat]);;
+
+let length_cat = prove
+  (`!a b. length (cat a b) = length a + length b`,
+   REPEAT LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[cat; length] THEN ARITH_TAC);;
+
+let insert = define
+  `insert x [] = [x] /\
+   insert x (CONS h t) = if x <= h then CONS x (CONS h t) else CONS h (insert x t)`;;
+
+let ins_sort = define
+  `ins_sort [] = [] /\
+   ins_sort (CONS h t) = insert h (ins_sort t)`;;
+
+let tm = `ins_sort [3; 1; 5]`;;
+
+REWRITE_CONV[ins_sort] tm;;
+REWRITE_CONV[ins_sort; insert] tm;;
+REWRITE_CONV[ins_sort; insert; ARITH] tm;;
+
+let length_insert = prove
+  (`!x s. length (insert x s) = 1 + length s`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[length; insert] THEN
+     COND_CASES_TAC THEN ASM_REWRITE_TAC[length]);;
+
+let length_ins_sort = prove
+  (`!s. length (ins_sort s) = length s`,
+   LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[ins_sort; length_insert; length]);;
+
+let mem = define
+  `mem x [] = F /\
+   mem x (CONS h t) = if x = h then T else mem x t`;;
+
+let mem_cat = prove
+  (`!x a b. mem x (cat a b) <=> mem x a \/ mem x b`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[mem; cat] THEN
+     COND_CASES_TAC THEN ASM_REWRITE_TAC[]);;
+
+let ordered = define
+  `ordered [] = T /\
+   ordered (CONS h t) = (ordered t /\ (!x. mem x t ==> h <= x))`;;
+
+let mem_insert = prove
+  (`!s x y. mem y (insert x s) <=> y = x \/ mem y s`,
+   LIST_INDUCT_TAC THEN REWRITE_TAC[insert; mem] THEN REPEAT STRIP_TAC THEN
+     REPEAT (COND_CASES_TAC THEN ASM_REWRITE_TAC[mem]));;
+
+let ordered_insert = prove
+  (`!x s. ordered s ==> ordered (insert x s)`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[insert; ordered; mem] THEN
+     STRIP_TAC THEN COND_CASES_TAC THENL [
+       ASM_REWRITE_TAC[ordered; mem] THEN GEN_TAC THEN
+	 COND_CASES_TAC THEN REPEAT STRIP_TAC THEN ASM_REWRITE_TAC[] THEN
+	 MATCH_MP_TAC LE_TRANS THEN EXISTS_TAC `h:num` THEN
+	 ASM_SIMP_TAC[];
+       ALL_TAC
+     ] THEN
+     ASM_SIMP_TAC[ordered; mem_insert] THEN
+     REPEAT STRIP_TAC THENL [
+       ASM_ARITH_TAC;
+       FIRST_X_ASSUM MATCH_MP_TAC THEN ASM_REWRITE_TAC[]
+     ]);;
+     
+let ordered_ins_sort = prove
+  (`!s. ordered (ins_sort s)`,
+   LIST_INDUCT_TAC THEN REWRITE_TAC[ins_sort; ordered] THEN
+     ASM_SIMP_TAC[ordered_insert]);;
+
+let count = define
+  `count (y:A) [] = 0 /\
+   count y (CONS h t) = (if y = h then 1 else 0) + count y t`;;
+
+let count_cat = prove
+  (`!a b x. count x (cat a b) = count x a + count x b`,
+   REPEAT LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[count; cat] THEN ARITH_TAC);;
+
+let perm = new_definition
+  `!a b. perm a b <=> (!x. count x a = count x b)`;;
+
+let count_insert = prove
+  (`!x y s. count y (insert x s) = (if y = x then 1 else 0) + count y s`,
+   GEN_TAC THEN GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[insert; count] THEN
+     REPEAT COND_CASES_TAC THEN ASM_REWRITE_TAC[count] THEN ASM_ARITH_TAC);;
+
+let count_ins_sort = prove
+  (`!y s. count y (ins_sort s) = count y s`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[ins_sort; count_insert; count]);;
+
+let perm_ins_sort = prove
+  (`!s. perm (ins_sort s) s`,
+   REWRITE_TAC[perm; count_ins_sort]);;
+
+

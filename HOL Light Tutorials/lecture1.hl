@@ -1,0 +1,241 @@
+(* Terms are basic HOL Light objects.
+   Usually, terms are entered in backquotes *)
+(* \/ means disjunction
+   /\ means conjunction
+   ~ means negation
+   q and p are variables *)
+(* Emacs: press C-c C-e to execute the command *)
+let tm = `q \/ ~(q /\ p)`;;
+(* Each term has type *)
+(* The next command will print "bool" *)
+type_of tm;;
+(* The command TAUT tries to prove propositional tautologies,
+   i.e. it tries to establish that the given term is true
+   for any assignment of Boolean variables *)
+(* If TAUT is successful, it returns a theorem. *)
+(* Each theorem has the following form: A1,...,An |- C
+   where A1,...,An,C are Boolean terms (terms with Boolean type).
+   A1,...,An are assumptions, and C is the conclusion of the theorem *)
+TAUT tm;;
+
+(* A more complex Boolean term *)
+(* ==> means implication *)
+let tm1 = `(p ==> (q ==> r)) ==> ((p ==> q) ==> (p ==> r))`;;
+TAUT tm1;;
+
+(* Now, we will prove the theorem |- tm1 step by step
+   without any automatization provided by TAUT *)
+
+(* ASSUME takes a term tm and returns the theorem tm |- tm *)
+let p_th = ASSUME `p:bool`;;
+let pq_th = ASSUME `p ==> q`;;
+(* MP takes two theorems in the form |- a ==> b and |- a,
+   and returns a new theorem |- b *)
+(* Note: assumptions of the result is the union of assumptions
+   of two arguments of MP *)
+let q_th = MP pq_th p_th;;
+let pqr_th = ASSUME `p ==> (q ==> r)`;;
+let qr_th = MP pqr_th p_th;;
+let r_th = MP qr_th q_th;;
+(* DISCH B discharges the assumption B, i.e.,
+   given a theorem B,... |- P, DISCH B returns
+   ... |- B ==> P *)
+let pr_th = DISCH `p:bool` r_th;;
+let pqpr_th = DISCH `p ==> q` pr_th;;
+let final_th = DISCH `p ==> (q ==> r)` pqpr_th;;
+
+(* The final step(s) could be done with DISCH_ALL *)
+DISCH_ALL pqpr_th;;
+
+(* DISCH_ALL discharges all assumptions, i.e.,
+   given a theorem A1,...,An |- P, DISCH_ALL returns
+   |- A1 ==> A2 ==> ... ==> An ==> P *)
+DISCH_ALL r_th;;
+
+(* Backward proofs *)
+
+(* The most common way to prove theorems in HOL Light is
+   a backward reasoninig method. *)
+(* We start with a goal (a term which we want to prove) and
+   then try to figure out how this goal can be obtained from
+   other (possibly simpler) subgoals. We move from a goal to subgoals
+   by applying special functions which are called tactics. *)
+(* Each tactic corresponds to an inference rule. For instance, the tactic
+   CONJ_TAC can be applied to a goal ?- a /\ b and yields two new subgoals
+   ?- a and ?- b (the notation A1,...,An ?- tm denotes a goal tm with
+   assumptions A1,...,An). Compare with the inference rule CONJ which
+   takes two theorems |-a and |- b, and yields |- a /\ b. It is clear that
+   the tactic CONJ_TAC is similar to CONJ but it works in the opposite
+   direction. *)
+(* We type "g" before the goal term in order to begin our backward proof. *)
+
+g `(p ==> (q ==> r)) ==> ((p ==> q) ==> (p ==> r))`;;
+
+(* The command "e" before a tactic, executes this tactic for
+   the current active goal. *)
+e DISCH_TAC;;
+e DISCH_TAC;;
+e DISCH_TAC;;
+
+(* The function b() cancels the last proof step *)
+b();;
+b();;
+b();;
+
+(* Alternative solution: repeat the application of the DISCH_TAC 
+   until it fails *)
+e (REPEAT DISCH_TAC);;
+
+b();;
+
+(* Alternative solution: STRIP_TAC *)
+e (REPEAT STRIP_TAC);;
+
+(* Backward MP: MATCH_MP_TAC. 
+   MATCH_MP_TAC takes one argument: a theorem in the form |- P ==> Q.
+   MATCH_MP_TAC (|- P ==> Q) applied to a goal A ?- Q yields a new goal
+   A ?- P *)
+e (MATCH_MP_TAC (ASSUME `p ==> (q ==> r)`));;
+
+(* We need a subgoal ?- q ==> r *)
+e (SUBGOAL_THEN `q ==> r` ASSUME_TAC);;
+e (MATCH_MP_TAC (ASSUME `p ==> q ==> r`));;
+e (ACCEPT_TAC (ASSUME `p:bool`));;
+
+e (MATCH_MP_TAC (ASSUME `q ==> r`));;
+e (MATCH_MP_TAC (ASSUME `p ==> q`));;
+e (ACCEPT_TAC (ASSUME `p:bool`));;
+
+b();;
+
+e (ASM_REWRITE_TAC[]);;
+
+let result = top_thm();;
+
+(* Alternative solution *)
+g `(p ==> (q ==> r)) ==> ((p ==> q) ==> (p ==> r))`;;
+e (REPEAT STRIP_TAC);;
+e (SUBGOAL_THEN `q ==> r` ASSUME_TAC);;
+e (FIRST_ASSUM MATCH_MP_TAC);;
+e (FIRST_ASSUM ACCEPT_TAC);;
+e (FIRST_ASSUM MATCH_MP_TAC);;
+e (FIRST_ASSUM MATCH_MP_TAC);;
+e (FIRST_ASSUM ACCEPT_TAC);;
+
+(* Named assumptions *)
+g `(p ==> (q ==> r)) ==> ((p ==> q) ==> (p ==> r))`;;
+e (DISCH_THEN (LABEL_TAC "h1"));;
+e (DISCH_THEN (LABEL_TAC "h2"));;
+e (DISCH_THEN (LABEL_TAC "h3"));;
+
+e (SUBGOAL_THEN `q ==> r` (LABEL_TAC "h4"));;
+(* e (FIRST_ASSUM MATCH_MP_TAC);; *)
+e (USE_THEN "h1" MATCH_MP_TAC);;
+e (ASM_REWRITE_TAC[]);;
+e (USE_THEN "h4" MATCH_MP_TAC);;
+e (USE_THEN "h2" MATCH_MP_TAC);;
+e (ASM_REWRITE_TAC[]);;
+
+(* The final result (a theorem and its proof) can be written with
+   the function "prove" which takes the statement of the theorem
+   as the first arguments and its proof as the second argument. *)
+(* The operator THEN connects proof steps. *)
+(* If it is necessary to provide different proof steps for each subgoal,
+   the operator THENL is used. A list with two entries follows THENL, 
+   where each entry proves its own subgoal. *)
+
+(* Emacs: it is possible to execute the proof step by step with
+   the following commands.
+   Move the cursor over the goal term and press C-c C-g.
+   Move the cursor to the next line and press C-c C-l.
+   This command will execute the tactic on the line and move
+   the cursor to the next line (press C-C l to execute the command
+   without moving the cursor).
+   The command C-c C-b cancels the previous proof command.
+   The command C-C C-p prints the current goal. *)
+
+let result = prove
+  (`(p ==> (q ==> r)) ==> ((p ==> q) ==> (p ==> r))`,
+   REPEAT STRIP_TAC THEN
+     SUBGOAL_THEN `q ==> r` ASSUME_TAC THENL [
+       FIRST_ASSUM MATCH_MP_TAC THEN 
+	 ASM_REWRITE_TAC[];
+       FIRST_ASSUM MATCH_MP_TAC THEN
+	 FIRST_ASSUM MATCH_MP_TAC THEN
+	 ASM_REWRITE_TAC[]
+     ]);;
+
+let result = prove
+  (`(p ==> (q ==> r)) ==> ((p ==> q) ==> (p ==> r))`,
+   REPEAT STRIP_TAC THEN
+     SUBGOAL_THEN `q ==> r` ASSUME_TAC THENL [
+       FIRST_ASSUM MATCH_MP_TAC THEN ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     REPEAT (FIRST_ASSUM MATCH_MP_TAC) THEN
+       ASM_REWRITE_TAC[]);;
+
+let result = prove
+  (`(p ==> (q ==> r)) ==> ((p ==> q) ==> (p ==> r))`,
+  (* The tactic for proving propositional logic goals *)
+   ITAUT_TAC);;
+
+let result = prove
+  (`(p ==> (q ==> r)) ==> ((p ==> q) ==> (p ==> r))`,
+   (* A general first-order decision procedure *)
+   MESON_TAC[]);;
+
+
+(* = is the standard HOL Light equality. It is defined
+   for all types *)
+let eq = TAUT `(a ==> b) = (b \/ ~a)`;;
+(* <=> is the standard HOL Light equality applied to Boolean
+   arguments. Internally <=> and = coincide (for Boolean arguments).
+   But there are differences in how these two symbols are parsed.
+   It is important to remember that the precedence of <=> is lower than
+   the precedence of all other Boolean operators. At the same time, 
+   = has higher precedence than Boolean operators. *)
+(* This term is parsed as (a \/ b) <=> (b \/ a) *)
+let eq_comm = TAUT `a \/ b <=> b \/ a`;;
+(* The next term is parsed as a \/ (b = b) \/ a. *)
+(* This is a completely different term where b is an arbitrary
+   (not necessary Boolean) variable *)
+TAUT `a \/ b = b \/ a`;;
+
+(* Note: Many standard operations in HOL Light (/\, \/, +, *, etc.)
+   are right associative. *)
+let eq_assoc = TAUT `a \/ b \/ c <=> (a \/ b) \/ c`;;
+let eq_middle = TAUT `~a \/ a <=> T`;;
+let eq_t = TAUT `T \/ a <=> T`;;
+
+(* Let's prove the theorem |- tm2 with equalities defined above *)
+let tm2 = `p ==> (q ==> p)`;;
+
+(* REWRITE_CONV[] takes a list of equality theorems and
+   replaces all occurrences of left hand sides of these theorems in
+   a given term with right hand sides. *)
+(* THENC connects several conversions (a conversion in HOL Light
+   is any function that takes a term and returns an equality theorem). *)
+(* Even without any theorems in the list, REWRITE_CONV[] rewrites
+   with some basic default theorems. PURE_REWRITE_CONV[] rewrites only
+   with given theorems. *)
+let th1 = (REWRITE_CONV[eq] THENC 
+	     REWRITE_CONV[eq_comm] THENC
+	     REWRITE_CONV[eq_assoc] THENC
+	     PURE_REWRITE_CONV[eq_middle] THENC
+	     PURE_REWRITE_CONV[eq_t]) tm2;;
+
+(* The next command will never stop. *)
+(* REWRITE_CONV[] tries to avoid loops but it is not possible in all
+   cases. In particular, the example above is rewritten in the following way:
+   a \/ (b \/ c) -> (a \/ b) \/ c -> c \/ (a \/ b)
+   -> (c \/ a) \/ b -> b \/ (c \/ a) -> (b \/ c) \/ a
+   -> a \/ (b \/ c) -> (a \/ b) \/ c -> ... *)
+(* Emacs: press C-c C-c to stop the command *)
+REWRITE_CONV[eq_comm; eq_assoc] `a \/ b \/ c`;;
+
+(* We can get the previous result if we split rewritings with
+   commutativity and associativity theorems *)
+(REWRITE_CONV[eq; eq_comm] THENC 
+   PURE_REWRITE_CONV[eq_assoc; eq_middle; eq_t]) tm2;;
+

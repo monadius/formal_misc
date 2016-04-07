@@ -1,0 +1,164 @@
+let tarski_max = prove(`!f:(A->bool)->(A->bool). 
+			(!A B. A SUBSET B ==> f A SUBSET f B)
+			 ==> let X = UNIONS {A | A | A SUBSET f A} in
+			   f X = X /\ (!Y. f Y = Y ==> Y SUBSET X)`,
+   REPEAT STRIP_TAC THEN LET_TAC THEN
+     SUBGOAL_THEN `X SUBSET f (X:A->bool)` ASSUME_TAC THENL [
+       ASM SET_TAC[];
+       ALL_TAC
+     ] THEN
+     CONJ_TAC THENL [
+       MATCH_MP_TAC SUBSET_ANTISYM THEN ASM_REWRITE_TAC[] THEN
+	 GEN_REWRITE_TAC LAND_CONV [GSYM UNIONS_1] THEN
+	 EXPAND_TAC "X" THEN
+	 MATCH_MP_TAC SUBSET_UNIONS THEN
+	 ASM_REWRITE_TAC[SUBSET; IN_SING] THEN REPEAT STRIP_TAC THEN
+	 ASM SET_TAC[];
+       ALL_TAC
+     ] THEN
+     ASM SET_TAC[]);;
+
+
+let tarski_min = prove(`!f:(A->bool)->(A->bool). 
+			(!A B. A SUBSET B ==> f A SUBSET f B)
+			 ==> let Y = INTERS {A | A | f A SUBSET A} in
+			   f Y = Y /\ (!X. f X = X ==> Y SUBSET X)`,
+   REPEAT STRIP_TAC THEN LET_TAC THEN
+     SUBGOAL_THEN `f Y SUBSET (Y:A->bool)` ASSUME_TAC THENL [
+       ASM SET_TAC[];
+       ALL_TAC
+     ] THEN
+     CONJ_TAC THENL [
+       MATCH_MP_TAC SUBSET_ANTISYM THEN ASM_REWRITE_TAC[] THEN
+	 EXPAND_TAC "Y" THEN REWRITE_TAC[SUBSET] THEN
+	 GEN_TAC THEN REWRITE_TAC[GSYM SUBSET; IN_INTERS] THEN
+	 DISCH_THEN (MP_TAC o SPEC `f (Y:A->bool):A->bool`) THEN
+	 ANTS_TAC THENL [
+	   ASM SET_TAC[];
+	   ALL_TAC
+	 ] THEN
+	 ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     ASM SET_TAC[]);;
+
+
+let injective = new_definition `injective f <=> (!x y. f x = f y ==> x = y)`;;
+let surjective = new_definition `surjective f <=> (!y. ?x. f x = y)`;;
+let bijective = new_definition `bijective f <=> injective f /\ surjective f`;;
+
+let tarski_fix_exists = prove(`!f:(A->bool)->(A->bool).
+			       (!A B. A SUBSET B ==> f A SUBSET f B)
+			       ==> ?X. f X = X`,
+   GEN_TAC THEN
+     DISCH_THEN (MP_TAC o MATCH_MP tarski_min) THEN
+     LET_TAC THEN STRIP_TAC THEN
+     EXISTS_TAC `Y:A->bool` THEN
+     ASM_REWRITE_TAC[]);;
+
+let inj_imp_bij = prove(`!(f:A->B) (g:B->A). injective f /\ injective g
+			  ==> ?h:A->B. bijective h`,
+   REWRITE_TAC[injective] THEN REPEAT STRIP_TAC THEN
+     ABBREV_TAC `phi = \S. (:A) DIFF (IMAGE (g:B->A) ((:B) DIFF (IMAGE (f:A->B) S)))` THEN
+     SUBGOAL_THEN `!(X:A->bool) Y. X SUBSET Y ==> (phi X):A->bool SUBSET phi Y` ASSUME_TAC THENL [
+       EXPAND_TAC "phi" THEN ASM SET_TAC[];
+       ALL_TAC
+     ] THEN
+     POP_ASSUM (STRIP_ASSUME_TAC o MATCH_MP tarski_fix_exists) THEN
+     SUBGOAL_THEN `IMAGE (g:B->A) ((:B) DIFF IMAGE f X) = (:A) DIFF X` (LABEL_TAC "g") THENL [
+       POP_ASSUM MP_TAC THEN EXPAND_TAC "phi" THEN
+	 ASM SET_TAC[];
+       ALL_TAC
+     ] THEN
+     ABBREV_TAC `h = \x. if x IN X then (f:A->B) x else (@y. g y = x)` THEN
+     SUBGOAL_THEN `!x:A. ~(x IN X) ==> (g:B->A) (h x) = x` ASSUME_TAC THENL [
+       EXPAND_TAC "h" THEN REMOVE_THEN "g" MP_TAC THEN SET_TAC[];
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `!x:A. x IN X ==> (h:A->B) x = f x` ASSUME_TAC THENL [
+       ASM_MESON_TAC[];
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `!x y. x IN X /\ ~(y IN X) ==> ~((h:A->B) x = h y)` ASSUME_TAC THENL [
+       REPEAT GEN_TAC THEN STRIP_TAC THEN
+	 DISCH_THEN (MP_TAC o AP_TERM `g:B->A`) THEN
+	 ASM_SIMP_TAC[] THEN
+	 ASM SET_TAC[];
+       ALL_TAC
+     ] THEN
+     EXISTS_TAC `h:A->B` THEN REWRITE_TAC[bijective; injective; surjective] THEN
+     CONJ_TAC THEN REPEAT GEN_TAC THENL [
+       ASM_CASES_TAC `x:A IN X` THEN ASM_CASES_TAC `y:A IN X` THEN ASM_MESON_TAC[];
+       ALL_TAC
+     ] THEN
+     ASM_CASES_TAC `y IN IMAGE (f:A->B) X` THEN ASM SET_TAC[]);;
+
+
+let tarski_min_bounded = prove(`!f:(A->bool)->(A->bool) D.
+				f D SUBSET D /\
+				(!A B. A SUBSET B /\ B SUBSET D ==> f A SUBSET f B)
+				==> let Y = INTERS {A | A | f A SUBSET A /\ A SUBSET D} in
+				  Y SUBSET D /\ f Y = Y 
+				    /\ (!X. X SUBSET D /\ f X = X ==> Y SUBSET X)`,
+   REPEAT STRIP_TAC THEN LET_TAC THEN
+     SUBGOAL_THEN `!A:A->bool. A SUBSET D ==> f A SUBSET D` ASSUME_TAC THENL [
+       ASM SET_TAC[];
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `Y SUBSET D:A->bool` ASSUME_TAC THENL [
+       ASM SET_TAC[];
+       ALL_TAC
+     ] THEN
+     ASM_REWRITE_TAC[] THEN
+     SUBGOAL_THEN `f Y SUBSET (Y:A->bool)` ASSUME_TAC THENL [
+       EXPAND_TAC "Y" THEN ASM_REWRITE_TAC[SUBSET_INTERS; IN_ELIM_THM] THEN
+	 REPEAT STRIP_TAC THEN
+	 MATCH_MP_TAC SUBSET_TRANS THEN
+	 EXISTS_TAC `f (t:A->bool):A->bool` THEN ASM_REWRITE_TAC[] THEN
+         FIRST_X_ASSUM MATCH_MP_TAC THEN 
+	 ASM SET_TAC[];
+       ALL_TAC
+     ] THEN
+     CONJ_TAC THENL [
+       MATCH_MP_TAC SUBSET_ANTISYM THEN ASM_REWRITE_TAC[] THEN
+	 EXPAND_TAC "Y" THEN REWRITE_TAC[SUBSET] THEN
+	 GEN_TAC THEN REWRITE_TAC[GSYM SUBSET; IN_INTERS] THEN
+	 DISCH_THEN (MP_TAC o SPEC `f (Y:A->bool):A->bool`) THEN
+	 ANTS_TAC THENL [
+	   ASM SET_TAC[];
+	   ALL_TAC
+	 ] THEN
+	 ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     ASM SET_TAC[]);;
+
+
+let tarski_fix_bounded_exists = prove(`!f (D:A->bool). f D SUBSET D /\
+					(!A B. A SUBSET B /\ B SUBSET D ==> f A SUBSET f B)
+				      ==> ?X. X SUBSET D /\ f X = X`,
+   REPEAT GEN_TAC THEN
+     DISCH_THEN (MP_TAC o MATCH_MP tarski_min_bounded) THEN
+     LET_TAC THEN STRIP_TAC THEN
+     EXISTS_TAC `Y:A->bool` THEN
+     ASM_REWRITE_TAC[]);;
+
+let inj_imp_bij = prove(`!f g (A:A->bool) (B:B->bool). INJ f A B /\ INJ g B A
+			  ==> ?h. BIJ h A B`,
+   REPEAT STRIP_TAC THEN
+     ABBREV_TAC `phi = \S. A DIFF (IMAGE (g:B->A) (B DIFF (IMAGE (f:A->B) S)))` THEN
+     SUBGOAL_THEN `phi (A:A->bool) SUBSET A` ASSUME_TAC THENL [
+       EXPAND_TAC "phi" THEN
+	 SET_TAC[];
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `!(X:A->bool) Y. X SUBSET Y /\ Y SUBSET A ==> (phi X):A->bool SUBSET phi Y` ASSUME_TAC THENL [
+       EXPAND_TAC "phi" THEN REWRITE_TAC[SUBSET; IN_DIFF; IN_IMAGE; NOT_EXISTS_THM] THEN
+	 REPEAT STRIP_TAC THEN ASM_REWRITE_TAC[] THEN
+	 ASM_MESON_TAC[INJ];
+       ALL_TAC
+     ] THEN
+     MP_TAC (ISPECL[`phi:(A->bool)->(A->bool)`; `A:A->bool`] tarski_fix_bounded_exists) THEN
+     ASM_REWRITE_TAC[] THEN STRIP_TAC THEN
+     ABBREV_TAC `h = \x. if x IN X then (f:A->B) x else 
+

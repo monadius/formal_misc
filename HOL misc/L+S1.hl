@@ -1,0 +1,128 @@
+let partial_order = new_definition `partial_order (R:A->A->bool) <=>
+  (!x. R x x) /\
+  (!x y. R x y /\ R y x ==> x = y) /\
+  (!x y z. R x y /\ R y z ==> R x z)`;;
+
+let total_order = new_definition `total_order (R:A->A->bool) <=>
+  !x y. R x y \/ R y x`;;
+
+let lift_rel = new_definition `lift_rel (R:A->A->bool) = \f g:(B->A). (!a. R (f a) (g a))`;;
+
+let ex1_1_4 = prove(`!R:A->A->bool. partial_order R ==> partial_order (lift_rel R:(B->A)->(B->A)->bool)`,
+		      REWRITE_TAC[partial_order; lift_rel] THEN
+			REPEAT STRIP_TAC THEN ASM_REWRITE_TAC[] THENL [
+			  REWRITE_TAC[FUN_EQ_THM] THEN X_GEN_TAC `a:B` THEN
+			    FIRST_X_ASSUM MATCH_MP_TAC THEN
+			    ASM_REWRITE_TAC[];
+			  FIRST_X_ASSUM MATCH_MP_TAC THEN
+			    EXISTS_TAC `(y:B->A) a` THEN
+			    ASM_REWRITE_TAC[];
+			]);;
+
+(* auto *)
+let ex1_1_4 = prove(`!R:A->A->bool. partial_order R ==> partial_order (lift_rel R:(B->A)->(B->A)->bool)`,
+		      REWRITE_TAC[partial_order; lift_rel] THEN MESON_TAC[FUN_EQ_THM]);;
+
+(* 1_2_6 *)
+let wf = new_definition `wf (R:A->A->bool) <=> !P. (?x. P x) ==> (?x. P x /\ !y. ~(y = x) /\ R y x ==> ~P y)`;;
+
+(* 1_2_6_1 *)
+let ex1_2_6_1 = prove(`~(wf ((SUBSET):(num->bool)->(num->bool)->bool))`,
+   REWRITE_TAC[wf; NOT_FORALL_THM; NOT_IMP; NOT_EXISTS_THM; DE_MORGAN_THM] THEN
+     EXISTS_TAC `{{n | n | i <= n} | i | T}` THEN REWRITE_TAC[DIFF; UNIV; IN_ELIM_THM; NOT_EXISTS_THM] THEN
+     CONJ_TAC THENL [
+       EXISTS_TAC `(:num)` THEN EXISTS_TAC `0` THEN
+	 REWRITE_TAC[EXTENSION; UNIV; IN_ELIM_THM; LE_0];
+       ALL_TAC
+     ] THEN
+     GEN_TAC THEN
+     ASM_CASES_TAC `!i. ~(x = {n | i <= n})` THEN ASM_REWRITE_TAC[] THEN
+     POP_ASSUM MP_TAC THEN REWRITE_TAC[NOT_FORALL_THM] THEN STRIP_TAC THEN
+     ASM_REWRITE_TAC[] THEN
+     EXISTS_TAC `{n | i + 1 <= n}` THEN 
+     REWRITE_TAC[EXTENSION; SUBSET; IN_ELIM_THM; NOT_FORALL_THM] THEN
+     REPEAT STRIP_TAC THENL [
+       EXISTS_TAC `i:num` THEN ARITH_TAC;
+       POP_ASSUM MP_TAC THEN ARITH_TAC;
+       EXISTS_TAC `i + 1` THEN ARITH_TAC;
+     ]);;
+
+(* 1_2_6_2 *)
+let finite_exists = MESON[FINITE_RULES] `?s:num->bool. FINITE s`;;
+let fnum_type = new_type_definition "fnum" ("mk_fnum", "dest_fnum") finite_exists;;
+
+let finite_fnum = prove(`!s. FINITE (dest_fnum s)`,
+			MESON_TAC[fnum_type]);;
+
+let dest_fnum_inj = prove(`!s t. dest_fnum s = dest_fnum t <=> s = t`,
+			  MESON_TAC[fnum_type]);;
+
+
+let wf_induct = prove(`!P. (!n. (!m. m < n ==> P m) ==> P n) ==> (!n. P n)`,
+      REPEAT STRIP_TAC THEN
+	MP_TAC (ARITH_RULE `n < n + 1`) THEN
+	ABBREV_TAC `k = n + 1` THEN POP_ASSUM (fun th -> ALL_TAC) THEN
+        SPEC_TAC (`n:num`, `n:num`) THEN SPEC_TAC (`k:num`, `k:num`) THEN
+	INDUCT_TAC THENL [
+	  REWRITE_TAC[LT];
+	  REPEAT STRIP_TAC THEN
+	    ASM_CASES_TAC `n = k:num` THENL [
+	      ASM_REWRITE_TAC[] THEN
+		UNDISCH_TAC `!n. (!m. m < n ==> P m) ==> P n` THEN
+		DISCH_THEN MATCH_MP_TAC THEN ASM_REWRITE_TAC[];
+	      ALL_TAC
+	    ] THEN
+	    FIRST_X_ASSUM MATCH_MP_TAC THEN
+	      POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN ARITH_TAC
+	]);;
+
+
+let min_exists = prove(`!P. (?x. P x) ==> (?n. P n /\ (!m. P m ==> n <= m))`,
+		       REPEAT STRIP_TAC THEN POP_ASSUM MP_TAC THEN
+			 SPEC_TAC (`x:num`, `k:num`) THEN
+			 MATCH_MP_TAC wf_induct THEN REPEAT STRIP_TAC THEN
+			 ASM_CASES_TAC `!m. P m ==> k <= m` THENL [
+			   EXISTS_TAC `k:num` THEN ASM_REWRITE_TAC[];
+			   ALL_TAC
+			 ] THEN
+			 POP_ASSUM MP_TAC THEN REWRITE_TAC[NOT_FORALL_THM; NOT_IMP; NOT_LE] THEN STRIP_TAC THEN
+			 FIRST_X_ASSUM (MP_TAC o SPEC `m:num`) THEN
+			 ASM_REWRITE_TAC[]);;
+
+let min_image_exists = prove(`!s f. (?x:A. x IN s) ==> (?x. x IN s /\ (!y. y IN s ==> f x <= f y))`,
+			     REPEAT STRIP_TAC THEN
+			       ABBREV_TAC `P = IMAGE (f:A->num) s` THEN
+   			       SUBGOAL_THEN `?n:num. P n` MP_TAC THENL [
+				 EXISTS_TAC `f (x:A):num` THEN
+				   EXPAND_TAC "P" THEN REWRITE_TAC[IMAGE; IN_ELIM_THM] THEN
+				   EXISTS_TAC `x:A` THEN ASM_REWRITE_TAC[];
+				 ALL_TAC
+			       ] THEN
+			       DISCH_THEN (MP_TAC o MATCH_MP min_exists) THEN STRIP_TAC THEN
+			       UNDISCH_TAC `P (n:num):bool` THEN
+			       EXPAND_TAC "P" THEN REWRITE_TAC[IMAGE; IN_ELIM_THM] THEN STRIP_TAC THEN
+			       EXISTS_TAC `x':A` THEN ASM_REWRITE_TAC[] THEN
+			       POP_ASSUM (fun th -> REWRITE_TAC[SYM th]) THEN
+			       REPEAT STRIP_TAC THEN
+			       FIRST_X_ASSUM MATCH_MP_TAC THEN
+			       EXPAND_TAC "P" THEN REWRITE_TAC[IMAGE; IN_ELIM_THM] THEN
+			       EXISTS_TAC `y:A` THEN ASM_REWRITE_TAC[]);;
+
+let ex1_2_6_2 = prove(`wf (\s t. dest_fnum s SUBSET dest_fnum t)`,
+  REWRITE_TAC[wf] THEN REPEAT STRIP_TAC THEN
+    SUBGOAL_THEN `?s:fnum. s IN P /\ (!t. t IN P ==> (CARD o dest_fnum) s <= (CARD o dest_fnum) t)` MP_TAC THENL [
+      MATCH_MP_TAC min_image_exists THEN EXISTS_TAC `x:fnum` THEN ASM_REWRITE_TAC[IN];
+      ALL_TAC
+    ] THEN
+    REWRITE_TAC[IN; o_THM] THEN STRIP_TAC THEN
+    EXISTS_TAC `s:fnum` THEN ASM_REWRITE_TAC[] THEN
+    ONCE_REWRITE_TAC[GSYM CONTRAPOS_THM] THEN PURE_REWRITE_TAC[DE_MORGAN_THM; NOT_CLAUSES] THEN
+    REPEAT STRIP_TAC THEN
+    ASM_CASES_TAC `y = s:fnum` THEN ASM_REWRITE_TAC[] THEN
+    POP_ASSUM MP_TAC THEN REWRITE_TAC[CONTRAPOS_THM] THEN DISCH_TAC THEN
+    REWRITE_TAC[GSYM dest_fnum_inj] THEN
+    MATCH_MP_TAC CARD_SUBSET_LE THEN
+    ASM_REWRITE_TAC[finite_fnum] THEN
+    FIRST_X_ASSUM MATCH_MP_TAC THEN ASM_REWRITE_TAC[]);;
+    
+ 

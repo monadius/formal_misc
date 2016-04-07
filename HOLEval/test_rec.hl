@@ -1,0 +1,130 @@
+let length = LENGTH;;
+
+let el = prove(`!n. EL n l = if n = 0 then HD l else EL (PRE n) (TL l)`,
+	       INDUCT_TAC THEN REWRITE_TAC[EL; NOT_SUC; PRE]);;
+
+let el_pat = prove(`EL n (CONS h t) = if n = 0 then h else EL (PRE n) t`,
+		   GEN_REWRITE_TAC LAND_CONV [el] THEN REWRITE_TAC[HD; TL]);;
+
+let zip = define `!h1 t1 h2 t2. zip [] [] = [] /\ 
+  zip (CONS h1 t1) (CONS h2 t2) = CONS (h1, h2) (zip t1 t2)`;;
+
+let append = APPEND;;
+
+let mem = MEM;;
+
+let all = ALL;;
+
+let map = MAP;;
+
+let filter = FILTER;;
+
+let itlist = ITLIST;;
+
+let uniq = define `uniq [] = T /\ 
+  uniq (CONS h t) = if MEM h t then F else uniq t`;;
+
+let undup = define `!h t. undup [] = [] /\ 
+  undup (CONS h t) = if MEM h t then undup t else CONS h (undup t)`;;
+
+let flatten = define `flatten [] = [] /\
+  flatten (CONS h t) = APPEND h (flatten t)`;;
+
+let flatten_itlist = prove(`!s. flatten s = ITLIST APPEND s []`,
+   LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[flatten; ITLIST]);;
+
+let last = LAST;;
+
+let last_pat = prove(`LAST [h] = h /\ 
+    LAST (CONS h1 (CONS h2 t)) = LAST (CONS h2 t)`,
+  REWRITE_TAC[LAST; NOT_CONS_NIL]);;
+
+let index_tail = define `index_tail x (CONS h t) n =
+  if x = h then n else index_tail x t (SUC n)`;;
+
+let index = define `index x (CONS h t) = 
+  if x = h then 0 else SUC (index x t)`;; 
+
+let split_list = define `split_list [] = ([], [])
+  /\ split_list [h] = ([h], [])
+  /\ split_list (CONS h1 (CONS h2 t)) =
+  (CONS h1 (FST (split_list t)), CONS h2 (SND (split_list t)))`;;
+
+let split_let = prove(`split_list (CONS h1 (CONS h2 t)) =
+                         let (a,b) = split_list t in
+			   (CONS h1 a, CONS h2 b)`,
+		      LET_TAC THEN ASM_REWRITE_TAC[split_list]);;
+
+let merge = define `merge [] s2 = s2 /\ 
+  merge s1 [] = s1 /\
+  merge (CONS h1 t1) (CONS h2 t2) = 
+  if h1 <= h2 then
+    CONS h1 (merge t1 (CONS h2 t2))
+  else
+    CONS h2 (merge (CONS h1 t1) t2)`;;
+
+let general_rec_exists_tac g = 
+  let g_tm = Pervasives.snd g in
+  let th = prove_general_recursive_function_exists g_tm in
+    MATCH_MP_TAC (DISCH_ALL th) g;;
+
+let split_list_length = 
+  prove(`!s:(A)list. LENGTH (FST (split_list s)) + LENGTH (SND (split_list s))
+	  = LENGTH s`,
+      GEN_TAC THEN
+      SUBGOAL_THEN `!n s:(A)list. LENGTH s = n ==> LENGTH (FST (split_list s)) + LENGTH (SND (split_list s)) = LENGTH s` ASSUME_TAC THENL [
+	MATCH_MP_TAC num_WF THEN STRIP_TAC THEN STRIP_TAC THEN
+	  LIST_INDUCT_TAC THEN REWRITE_TAC[split_list; LENGTH; ADD] THEN
+	  POP_ASSUM (K ALL_TAC) THEN
+	  SPEC_TAC (`t:(A)list`, `t:(A)list`) THEN
+	  LIST_INDUCT_TAC THEN REWRITE_TAC[split_list; ADD; LENGTH; LE_SUC] THEN
+	  POP_ASSUM (K ALL_TAC) THEN
+	  DISCH_TAC THEN
+	  FIRST_X_ASSUM (MP_TAC o SPEC `LENGTH (t:(A)list)`) THEN
+	  ANTS_TAC THENL [
+	    POP_ASSUM MP_TAC THEN ARITH_TAC;
+	    ALL_TAC
+	  ] THEN
+	  DISCH_THEN (MP_TAC o SPEC `t:(A)list`) THEN REWRITE_TAC[] THEN
+	  ARITH_TAC;
+	ALL_TAC
+      ] THEN
+      FIRST_X_ASSUM MATCH_MP_TAC THEN
+	EXISTS_TAC `LENGTH (s:(A)list)` THEN REWRITE_TAC[]);;  
+
+let split_list_le_length = 
+  prove(`!s:(A)list. LENGTH (FST (split_list s)) <= LENGTH s /\
+	  LENGTH (SND (split_list s)) <= LENGTH s`,
+	GEN_TAC THEN
+	  MP_TAC (SPEC_ALL split_list_length) THEN
+	  ARITH_TAC);;
+
+
+let merge_sort_exists = prove(`?f:(num)list->(num)list. !s.
+    f s = if LENGTH s <= 1 then s else 
+      let x = split_list s in
+	merge (f (FST x)) (f (SND x))`,
+  general_rec_exists_tac THEN
+    EXISTS_TAC `MEASURE (LENGTH:(num)list->num)` THEN
+    REWRITE_TAC[WF_MEASURE; MEASURE; split_list; LENGTH] THEN
+    CONJ_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[LENGTH; ARITH_RULE `0 <= 1`] THEN
+    SPEC_TAC (`t:(num)list`, `t:(num)list`) THEN
+    LIST_INDUCT_TAC THEN REWRITE_TAC[LENGTH; ARITH_RULE `SUC 0 <= 1`] THEN
+    REWRITE_TAC[LENGTH; split_list] THEN
+    MP_TAC (ISPEC `t':(num)list` split_list_le_length) THEN
+    ARITH_TAC);;
+      
+let merge_sort = new_specification ["merge_sort"] merge_sort_exists;;
+
+let merge_sort_pat = prove(`merge_sort [] = [] /\
+    merge_sort [h] = [h] /\ 
+    merge_sort (CONS h1 (CONS h2 t)) =
+    let x = split_list (CONS h1 (CONS h2 t)) in
+      merge (merge_sort (FST x)) (merge_sort (SND x))`,
+   REPEAT CONJ_TAC THENL [
+     ONCE_REWRITE_TAC[merge_sort] THEN REWRITE_TAC[LENGTH; ARITH_RULE `0 <= 1`];
+     ONCE_REWRITE_TAC[merge_sort] THEN REWRITE_TAC[LENGTH; ARITH_RULE `SUC 0 <= 1`];
+     ALL_TAC
+   ] THEN
+   GEN_REWRITE_TAC LAND_CONV [merge_sort] THEN
+     REWRITE_TAC[LENGTH; ARITH_RULE `SUC (SUC n) <= 1 <=> F`]);;

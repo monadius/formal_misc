@@ -1,0 +1,319 @@
+needs "test_eval.hl";;
+needs "calc_num2.ml";;
+
+module Test_nonrec = struct
+
+(* add *)
+let add = new_definition `add a b = a + b`;;
+
+add_test (mk_test_rep 1000 "add" [add] 
+	    ~methods:[
+	      method_of_raw_conv "NUM_ADD_CONV" `(+):num->num->num` NUM_ADD_CONV;
+	      method_of_raw_conv "ADD2" `(+):num->num->num` Calc_num2.NUM_ADD_CONV;
+	      method_of_conv "REWRITE" (REWRITE_CONV[add; ARITH_ADD; ARITH_SUC]);
+	    ]
+	    [
+	      "0", [`0`; `0`], `0`;
+	      "100", [`20`; `80`], `100`;
+	      "113", [`1`; `112`], `113`;
+	      "114", [`113`; `1`], `114`;
+	      "1000", [`502`; `498`], `1000`;
+	    ]);;
+
+(* nat_rem *)
+let nat_rem = new_definition `nat_rem x y = x - (x DIV y) * y`;;
+
+add_test (mk_test_rep 100 "nat_rem" [nat_rem] 
+	    ~methods:[
+	      method_of_conv "REWRITE THENC NUM_REDUCE_CONV" 
+		(PURE_ONCE_REWRITE_CONV[nat_rem] THENC NUM_REDUCE_CONV);
+	      method_of_conv "NUM_REDUCE_CONV2" 
+		(PURE_ONCE_REWRITE_CONV[nat_rem] THENC Calc_num2.NUM_REDUCE_CONV);
+	    ]
+	    [
+	      "0", [`0`; `100`], `0`;
+	      "1", [`22`; `7`], `1`;
+	      "11", [`11`; `112`], `11`;
+	      "3", [`63`; `20`], `3`;
+	      "502", [`13502`; `1000`], `502`;
+	    ]);;
+
+(* add3 *)
+let add3 = new_definition `add3 a b = a + b + 3`;;
+
+add_test (mk_test_rep 1000 "add3" [add3] 
+	    ~methods:[
+	      method_of_conv "REWRITE THENC NUM_REDUCE_CONV" 
+		(PURE_ONCE_REWRITE_CONV[add3] THENC NUM_REDUCE_CONV);
+	      method_of_conv "NUM_REDUCE_CONV2" 
+		(PURE_ONCE_REWRITE_CONV[add3] THENC Calc_num2.NUM_REDUCE_CONV);
+	    ]
+	    [
+	      "0", [`0`; `0`], `3`;
+	      "100", [`20`; `80`], `103`;
+	      "113", [`1`; `112`], `116`;
+	      "114", [`113`; `1`], `117`;
+	      "1000", [`502`; `498`], `1003`;
+	    ]);;
+
+(* hd *)
+let hd = GEN_ALL HD;;
+
+add_test (mk_test_rep 1000 "hd" [hd] 
+	    ~methods:[
+	      method_of_conv "PURE_ONCE_REWRITE" (PURE_ONCE_REWRITE_CONV[hd]);
+	      method_of_conv "PURE_REWRITE" (PURE_REWRITE_CONV[hd]);
+	      method_of_conv "ONCE_REWRITE" (ONCE_REWRITE_CONV[hd]);
+	    ]
+	    [
+	      "[a]", [`[a:A]`], `a:A`;
+	      "[b;a]", [`[b; a:A]`], `b:A`;
+	      "[real]", [`[&1; &2; &3; &4; &5; &6; &7]`], `&1`;
+	    ]);;
+
+(* hd_nat *)
+let hd_nat = (GEN_ALL o ISPEC `t:(num)list`) hd;;
+
+add_test (mk_test_rep 1000 "hd_nat" [hd_nat] 
+	    ~methods:[
+	      method_of_conv "REWRITE" (PURE_ONCE_REWRITE_CONV[hd_nat]);
+	    ]
+	    [
+	      "[a]", [`[a:num]`], `a:num`;
+	      "[2;3]", [`[2; 3]`], `2`;
+	      "[long]", [`[1; 2; 3; 4; 5; 6; 7]`], `1`;
+	    ]);;
+
+(* tl *)
+let tl = GEN_ALL TL;;
+
+add_test (mk_test_rep 1000 "tl" [tl] 
+	    ~methods:[
+	      method_of_conv "REWRITE" (PURE_ONCE_REWRITE_CONV[tl]);
+	    ]
+	    [
+	      "[a]", [`[a:A]`], `[]:(A)list`;
+	      "[b;a]", [`[b; a:A]`], `[a:A]`;
+	      "[real]", [`[&1; &2; &3; &4; &5; &6; &7]`], `[&2; &3; &4; &5; &6; &7]`;
+	    ]);;
+
+(* tl_nat *)
+let tl_nat = (GEN_ALL o ISPEC `h:num`) tl;;
+
+add_test (mk_test_rep 1000 "tl_nat" [tl_nat] 
+	    ~methods:[
+	      method_of_conv "REWRITE" (PURE_ONCE_REWRITE_CONV[tl_nat]);
+	    ]
+	    [
+	      "[a]", [`[a:num]`], `[]:(num)list`;
+	      "[2;3]", [`[2; 3]`], `[3]`;
+	      "[long]", [`[1; 2; 3; 4; 5; 6; 7]`], `[2; 3; 4; 5; 6; 7]`;
+	    ]);;
+
+(* fst *)
+let fst = FST;;
+
+add_test (mk_test_rep 1000 "fst" [fst] 
+	    ~methods:[
+	      method_of_conv "REWRITE" (PURE_ONCE_REWRITE_CONV[fst]);
+	    ]
+	    [
+	      "(a,b)", [`(a:A, b:B)`], `a:A`;
+	      "(nat)", [`(100, 200)`], `100`;
+	      "(real)", [`(&100, &200)`], `&100`;
+	    ]);;
+
+(* fst_nat_bool *)
+let fst_nat_bool = (GEN_ALL o ISPECL[`x:num`; `y:bool`]) fst;;
+
+add_test (mk_test_rep 1000 "fst_nat_bool" [fst_nat_bool] 
+	    ~methods:[
+	      method_of_conv "REWRITE" (PURE_ONCE_REWRITE_CONV[fst_nat_bool]);
+	    ]
+	    [
+	      "(a,b)", [`(a:num, b:bool)`], `a:num`;
+	      "(nat)", [`(100, T)`], `100`;
+	    ]);;
+
+(* snd *)
+let snd = SND;;
+
+add_test (mk_test_rep 1000 "snd" [snd] 
+	    ~methods:[
+	      method_of_conv "REWRITE" (PURE_ONCE_REWRITE_CONV[snd]);
+	    ]
+	    [
+	      "(a,b)", [`(a:A, b:B)`], `b:B`;
+	      "(nat)", [`(100, 200)`], `200`;
+	      "(real)", [`(&100, &200)`], `&200`;
+	    ]);;
+
+(* snd_nat_nat *)
+let snd_nat_nat = (GEN_ALL o ISPECL[`x:num`; `y:num`]) snd;;
+
+add_test (mk_test_rep 1000 "snd_nat_nat" [snd_nat_nat] 
+	    ~methods:[
+	      method_of_conv "REWRITE" (PURE_ONCE_REWRITE_CONV[snd_nat_nat]);
+	    ]
+	    [
+	      "(a,b)", [`(a:num, b:num)`], `b:num`;
+	      "(nat)", [`(100, 200)`], `200`;
+	    ]);;
+
+(* ite *)
+let ite = new_definition `ite P A B = if P then A else B`;;
+
+add_test (mk_test_rep 1000 "ite" [ite] 
+	    ~methods:[
+	      method_of_conv "REWRITE" (REWRITE_CONV[ite; ARITH]);
+	    ]
+	    [
+	    "1", [`T`; `1`; `2`], `1`;
+	    "3 + 4 < 7", [`3 + 4 < 7`; `(3 + 4)`; `((3 + 4) + 5)`], `12`;
+	    "3 + 4 >= 7", [`3 + 4 >= 7`; `(3 + 4)`; `((3 + 4) + 5)`], `7`;
+	  ]);;
+
+(* pair_eq *)
+let pair_eq = prove(`(=) (a,b) (c,d) <=> a = c /\ b = d`,
+		    REWRITE_TAC[PAIR_EQ]);;
+
+add_test (mk_test_rep 1000 "pair_eq" [pair_eq] 
+	    ~methods:[
+	      method_of_raw_conv "REWRITE" `=` (REWRITE_CONV[pair_eq]);
+	    ]
+	    [
+	      "(a,b) = (a,b)", [`(a:A, b:B)`; `(a:A, b:B)`], `T`;
+	      "(30,40) != (30,50)", [`(30, 40)`; `(30, 50)`], `F`;
+	      "(10,20) != (2,2)", [`(10, 20)`; `(20, 20)`], `F`;
+	      "(nat) = (nat)", [`(100, 200)`; `(100, 200)`], `T`;
+	      "(nat) = (nat) arith", [`(99 + 1, 21 - 1)`; `(10 * 10, 100 DIV 5)`], `T`;
+	    ]);;
+
+let and_if = prove(`a /\ b <=> if a then b else F`, MESON_TAC[]);;
+
+let or_if = prove(`a \/ b <=> if a then T else b`, MESON_TAC[]);;
+
+let neg_if = prove(`~a <=> if a then F else T`, MESON_TAC[]);;
+
+let imp_if = prove(`(a ==> b) <=> if a then b else T`, MESON_TAC[]);;
+
+(* cases *)
+let cases = new_definition `cases n = 
+  if n = 1 then 0
+  else if n = 2 then 3
+  else if n = 4 then 5
+  else 1`;;
+
+add_test (mk_test_rep 1000 "cases" [cases] 
+	    ~methods:[
+	      method_of_conv "REWRITE" (REWRITE_CONV[cases; PAIR_EQ; ARITH_EQ]);
+	    ]
+	    [
+	      "1", [`1`], `0`;
+	      "2", [`2`], `3`;
+	      "4", [`4`], `5`;
+	      "0", [`0`], `1`;
+	      "10", [`10`], `1`;
+	    ]);;
+
+(* b_tame *)
+let b_tame = new_definition 
+  `b_tame p q= 
+  if p,q = 0,3 then #0.618
+  else if p,q = 0,4 then #0.97
+  else if p,q = 1,2 then #0.656
+  else if p,q = 1,3 then #0.618
+  else if p,q = 2,1 then #0.797
+  else if p,q = 2,2 then #0.412
+  else if p,q = 2,3 then #1.2851
+  else if p,q = 3,1 then #0.311
+  else if p,q = 3,2 then #0.817
+  else if p,q = 4,0 then #0.347
+  else if p,q = 4,1 then #0.366
+  else if p,q = 5,0 then #0.04
+  else if p,q = 5,1 then #1.136
+  else if p,q = 6,0 then #0.686
+  else if p,q = 7,0 then #1.450
+  else #1.541`;;
+
+add_test (mk_test_rep 100 "b_tame" [b_tame] 
+	    ~methods:[
+	      method_of_conv "REWRITE" (REWRITE_CONV[b_tame; PAIR_EQ; ARITH_EQ]);
+	    ]
+	    [
+	      "0,3", [`0`; `3`], `#0.618`;
+	      "2,3", [`2`; `3`], `#1.2851`;
+	      "5,1", [`5`; `1`], `#1.136`;
+	      "7,0", [`7`; `0`], `#1.450`;
+	      "10, 30", [`10`; `30`], `#1.541`;
+	      "0, 2", [`0`; `2`], `#1.541`;
+	    ]);;
+
+(* pat1 *)
+let pat1 = my_define `pat1 (a + b) = a + b`;;
+
+add_test (mk_test_rep 1000 "pat1" [pat1] [
+	    "1 + 3", [`1 + 3`], `4`;
+	    "20 + 9", [`20 + 9`], `29`;
+	  ]);;
+
+(* pat2 *)
+let pat2 = my_define `pat2 [a] = 1 /\ pat2 [] = 0 /\ pat2 [a; b] = 2 /\
+  pat2 (CONS a (CONS b (CONS c t))) = 10`;;
+
+add_test (mk_test_rep 1000 "pat2" [pat2] 
+	    ~methods:[
+	      method_of_conv "REWRITE" (PURE_ONCE_REWRITE_CONV[pat2]);
+	    ]
+	    [
+	      "[]", [`[]:(real)list`], `0`;
+	      "[1]", [`[1]`], `1`;
+	      "[1;3]", [`[1; 3]`], `2`;
+	    ]);;
+
+(* pat3 *)
+let pat3 = my_define `pat3 [a] = a /\ pat3 [a; b] = a + b`;;
+
+add_test (mk_test_rep 1000 "pat3" [pat3] [
+	    "[1]", [`[1]`], `1`;
+	    "[1;3]", [`[1; 3]`], `4`;
+	  ]);;
+
+(* share *)
+let share = new_definition `share x y = if x DIV y < 30 then 
+  x DIV y else x DIV y + x`;;
+
+add_test (mk_test_rep 1000 "share" [share] [
+	    "34 30", [`34`; `30`], `1`;
+	    "111 2", [`111`; `2`], `166`;
+	    "34 100", [`34`; `1`], `68`;
+	  ]);;
+
+(* let1 *)
+let let1 = new_definition `let1 a b = let x = a - b DIV a in
+  if x > 10 then x + x else x + 2 * x`;;
+
+add_test (mk_test_rep 1000 "let1" [let1] [
+	    "10 30", [`10`; `30`], `21`;
+	    "15 4", [`15`; `4`], `30`;
+	  ]);;
+
+(* add_x *)
+let add_x = new_definition `add_x x = (+) x`;;
+
+add_test (mk_test_rep 1000 "add_x" [add_x] [
+	    "1", [`1`], `(+) 1`;
+	    "209", [`209`], `(+) 209`;
+	  ]);;
+
+(* add_x_lambda *)
+let add_x_lambda = new_definition `add_x_lambda x = \y. x + y`;;
+
+add_test (mk_test_rep 1000 "add_x_lambda" [add_x_lambda] [
+	    "1", [`1`], `\y. 1 + y`;
+	    "209", [`209`], `\y. 209 + y`;
+	  ]);;
+
+
+end;;
+

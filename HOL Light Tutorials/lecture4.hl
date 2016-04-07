@@ -1,0 +1,31 @@
+let ex1 = prove(`!R K. (!x y:A. R x y /\ R y x ==> x = y)
+		  /\ (!x y z. R x y /\ R y z ==> R x z)
+		  /\ (!x y. K x y <=> R x y /\ ~(x = y))
+		  ==> (!x. ~(K x x))
+		  /\ (!x y z. K x y /\ K y z ==> K x z)`,
+		REPEAT STRIP_TAC THENL [
+		  POP_ASSUM MP_TAC THEN
+		    ASM_REWRITE_TAC[];
+		  ALL_TAC
+		] THEN
+		  POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN
+		  ASM_REWRITE_TAC[] THEN
+		  REPEAT STRIP_TAC THENL [
+		    FIRST_X_ASSUM MATCH_MP_TAC THEN
+		      EXISTS_TAC `y:A` THEN ASM_REWRITE_TAC[];
+		    ALL_TAC
+		  ] THEN
+		  SUBGOAL_THEN `x = y:A` MP_TAC THENL [
+		    FIRST_X_ASSUM MATCH_MP_TAC THEN
+		      ASM_REWRITE_TAC[];
+		    ALL_TAC
+		  ] THEN
+		  ASM_REWRITE_TAC[]);;
+
+
+let a1 = ASSUME `!x y:A. R x y /\ R y x ==> x = y`;;
+let a2 = ASSUME `!x y z:A. R x y /\ R y z ==> R x z`;;
+let a3 = ASSUME `!x y:A. K x y <=> R x y /\ ~(x = y)`;;
+
+let c1 = `!x:A. ~(K x x)`;;
+let c1_th = (DISCH_ALL o REWRITE_RULE[] o SPECL [`x:A`; `x:A`]) a3;;

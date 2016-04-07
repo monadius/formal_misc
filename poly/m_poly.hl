@@ -1,0 +1,521 @@
+needs "Multivariate/cauchy.ml";;
+needs "update_database.ml";;
+
+let rev_table = define 
+  `!f i. rev_table (f:num->A) 0 = [] /\
+  rev_table f (SUC i) = CONS (f i) (rev_table f i)`;;
+
+let table = new_definition `!f i. table f i = REVERSE (rev_table f i)`;;
+
+let length_reverse = prove(`!(s:(A)list). LENGTH (REVERSE s) = LENGTH s`,
+   LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[LENGTH; REVERSE; LENGTH_APPEND] THEN ARITH_TAC);;
+
+let all_reverse = prove(`!P (s:(A)list). ALL P (REVERSE s) <=> ALL P s`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[ALL; REVERSE; ALL_APPEND; CONJ_ACI]);;
+
+let mem_reverse = prove(`!x:A s. MEM x (REVERSE s) <=> MEM x s`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[MEM; REVERSE; MEM_APPEND; DISJ_ACI]);;
+
+let reverse_nil = prove(`!s:(A)list. REVERSE s = [] <=> s = []`,
+   REWRITE_TAC[GSYM LENGTH_EQ_NIL; length_reverse]);;
+
+let length_rev_table = prove(`!(f:num->A) n. LENGTH (rev_table f n) = n`,
+   GEN_TAC THEN INDUCT_TAC THEN ASM_REWRITE_TAC[rev_table; LENGTH]);;
+
+let length_table = prove(`!(f:num->A) n. LENGTH (table f n) = n`,
+			 REWRITE_TAC[table; length_rev_table; length_reverse]);;
+
+let hd_append = prove(`!s t:(A)list. HD (APPEND s t) = if s = [] then HD t else HD s`,
+   LIST_INDUCT_TAC THEN REWRITE_TAC[APPEND; HD; NOT_CONS_NIL]);;
+
+let hd_reverse = prove(`!s:(A)list. ~(s = []) ==> HD (REVERSE s) = LAST s`,
+   LIST_INDUCT_TAC THEN REWRITE_TAC[REVERSE; HD; LAST] THEN
+     COND_CASES_TAC THEN ASM_REWRITE_TAC[REVERSE; APPEND; HD; hd_append] THEN
+     ASM_SIMP_TAC[reverse_nil]);;
+
+let el_reverse = prove(`!(s:(A)list) i. i < LENGTH s
+			 ==> EL i (REVERSE s) = EL (LENGTH s - i - 1) s`,
+   LIST_INDUCT_TAC THEN REWRITE_TAC[LENGTH; REVERSE] THENL [ ARITH_TAC; ALL_TAC ] THEN
+     REPEAT STRIP_TAC THEN REWRITE_TAC[EL_APPEND; length_reverse] THEN
+     COND_CASES_TAC THENL [
+       SUBGOAL_THEN `SUC (LENGTH (t:(A)list)) - i - 1 = SUC (LENGTH t - i - 1)` ASSUME_TAC THENL [
+	 POP_ASSUM MP_TAC THEN ARITH_TAC;
+	 ALL_TAC
+       ] THEN
+       ASM_SIMP_TAC[EL; TL];
+       ALL_TAC
+     ] THEN
+     ABBREV_TAC `n = LENGTH (t:(A)list)` THEN
+     ASM_SIMP_TAC[ARITH_RULE `~(i < n) /\ i < SUC n ==> i - n = 0 /\ SUC n - i - 1 = 0`; EL; HD]);;
+
+let el_rev_table = prove(`!(f:num->A) n i. i < n 
+			 ==> EL i (rev_table f n) = f (n - i - 1)`,
+   GEN_TAC THEN INDUCT_TAC THEN INDUCT_TAC THEN REWRITE_TAC[rev_table; EL; HD] THEN TRY ARITH_TAC THENL [
+     REWRITE_TAC[ARITH_RULE `SUC n - 0 - 1 = n`];
+     ALL_TAC
+   ] THEN
+     ASM_SIMP_TAC[LT_SUC; TL; ARITH_RULE `SUC n - SUC i - 1 = n - i - 1`]);;
+
+let el_table = prove(`!(f:num->A) n i. i < n ==> EL i (table f n) = f i`,
+   REPEAT STRIP_TAC THEN REWRITE_TAC[table] THEN
+     ASM_SIMP_TAC[length_reverse; length_rev_table; el_reverse] THEN
+     ASM_SIMP_TAC[el_rev_table; ARITH_RULE `i < n ==> n - i - 1 < n`] THEN
+     AP_TERM_TAC THEN POP_ASSUM MP_TAC THEN ARITH_TAC);;
+
+
+prioritize_real();;
+prioritize_complex();;
+
+let cpoly = define `!x h t. cpoly [] x = Cx (&0) /\
+  cpoly (CONS h t) x = h + x * cpoly t x`;;
+
+let roots = new_definition `!cs. roots cs = 
+  @r. (!x. cpoly cs x = LAST cs * cproduct (1..LENGTH cs - 1) (\i. x - r i))`;;
+
+let norm_cpoly = define 
+  `!h t. norm_cpoly [] = [] /\
+  norm_cpoly (CONS h t) = 
+  if norm_cpoly t = [] then 
+    if h = Cx (&0) then [] else [h]
+  else
+    CONS h (norm_cpoly t)`;;
+
+let is_algebraic = new_definition `is_algebraic a <=> 
+  ?cs. ~(cpoly cs = cpoly []) /\ ALL complex_integer cs /\ cpoly cs a = Cx (&0)`;;
+
+let is_transcendental = new_definition `is_transcendental a <=> ~(is_algebraic a)`;;
+
+
+let cpoly_sing = prove(`!c x. cpoly [c] x = c`,
+   REWRITE_TAC[cpoly; COMPLEX_MUL_RZERO; COMPLEX_ADD_RID]);;
+
+let cpoly_append = prove(`!cs1 cs2 x. cpoly (APPEND cs1 cs2) x
+			 = cpoly cs1 x + x pow (LENGTH cs1) * cpoly cs2 x`,
+   LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[APPEND; LENGTH; cpoly; complex_pow] THEN
+     CONV_TAC COMPLEX_RING);;
+
+let cpoly_vsum = prove(`!cs x. cpoly cs x = if cs = [] then Cx (&0)
+		       else vsum (0..LENGTH cs - 1) (\i. EL i cs * x pow i)`,
+   LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[cpoly; NOT_CONS_NIL] THEN GEN_TAC THEN
+     COND_CASES_TAC THENL [
+       ASM_REWRITE_TAC[LENGTH; ARITH_RULE `SUC 0 - 1 = 0`] THEN
+	 REWRITE_TAC[NUMSEG_SING; VSUM_SING; EL; HD; complex_pow] THEN
+	 CONV_TAC COMPLEX_RING;
+       ALL_TAC
+     ] THEN
+     REWRITE_TAC[LENGTH; ARITH_RULE `SUC n - 1 = n`] THEN
+     ASM_SIMP_TAC[VSUM_CLAUSES_LEFT; ARITH_RULE `0 <= LENGTH (t:(complex)list)`] THEN
+     REWRITE_TAC[EL; HD; complex_pow; COMPLEX_MUL_RID] THEN
+     AP_TERM_TAC THEN
+     ABBREV_TAC `n = LENGTH (t:(complex)list)` THEN
+     SUBGOAL_THEN `0 < n` ASSUME_TAC THENL [
+       EXPAND_TAC "n" THEN POP_ASSUM (K ALL_TAC) THEN POP_ASSUM MP_TAC THEN
+	 REWRITE_TAC[GSYM LENGTH_EQ_NIL] THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `0 + 1..n = 0 + 1..(n - 1) + 1` (fun th -> REWRITE_TAC[th]) THENL [
+       AP_TERM_TAC THEN POP_ASSUM MP_TAC THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     REWRITE_TAC[VSUM_OFFSET; GSYM ADD1; EL; TL; complex_pow] THEN
+     REWRITE_TAC[COMPLEX_RING `a * x * x pow i = x * (a * x pow i)`] THEN
+     SIMP_TAC[FINITE_NUMSEG; VSUM_COMPLEX_LMUL]);;
+
+let vsum_cpoly = prove(`!n c x. vsum (0..n) (\i. c i * x pow i) = cpoly (table c (n + 1)) x`,
+   REPEAT GEN_TAC THEN REWRITE_TAC[cpoly_vsum] THEN
+     REWRITE_TAC[GSYM LENGTH_EQ_NIL; length_table; ARITH_RULE `~(n + 1 = 0)`] THEN
+     REWRITE_TAC[ARITH_RULE `(n + 1) - 1 = n`] THEN
+     MATCH_MP_TAC VSUM_EQ THEN REWRITE_TAC[IN_NUMSEG] THEN REPEAT STRIP_TAC THEN
+     ASM_SIMP_TAC[el_table; ARITH_RULE `x' <= n ==> x' < n + 1`]);;
+
+let cpoly_eq0 = prove(`!cs. (cpoly cs = cpoly []) <=> ALL (\c. c = Cx (&0)) cs`,
+   GEN_TAC THEN ASM_CASES_TAC `(cs:(complex)list) = []` THENL [
+     ASM_REWRITE_TAC[ALL];
+     ALL_TAC
+   ] THEN
+     ASM_REWRITE_TAC[FUN_EQ_THM; cpoly_vsum; COMPLEX_POLYFUN_EQ_0; GSYM ALL_EL] THEN
+     REWRITE_TAC[IN_NUMSEG; ARITH_RULE `0 <= i`] THEN
+     ABBREV_TAC `n = LENGTH (cs:(complex)list)` THEN
+     SUBGOAL_THEN `0 < n` ASSUME_TAC THENL [
+       EXPAND_TAC "n" THEN POP_ASSUM (K ALL_TAC) THEN POP_ASSUM MP_TAC THEN
+	 REWRITE_TAC[GSYM LENGTH_EQ_NIL] THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     ASM_SIMP_TAC[ARITH_RULE `0 < n ==> (i <= n - 1 <=> i < n)`]);;
+
+let cpoly_neq0 = prove(`!cs. ~(cpoly cs = cpoly []) <=> ?c. MEM c cs /\ ~(c = Cx (&0))`,
+   GEN_TAC THEN REWRITE_TAC[cpoly_eq0; NOT_ALL; GSYM EX_MEM; CONJ_ACI]);;
+
+let norm_cpoly_eq = prove(`!cs x. cpoly (norm_cpoly cs) x = cpoly cs x`,
+   LIST_INDUCT_TAC THEN REWRITE_TAC[cpoly; norm_cpoly] THEN GEN_TAC THEN
+     FIRST_X_ASSUM (MP_TAC o SPEC `x:complex`) THEN 
+     REPEAT COND_CASES_TAC THEN ASM_REWRITE_TAC[cpoly] THEN
+     CONV_TAC COMPLEX_RING);;
+
+let norm_cpoly_nil = prove(`!cs. norm_cpoly cs = [] <=> ALL (\c. c = Cx (&0)) cs`,
+   LIST_INDUCT_TAC THEN REWRITE_TAC[norm_cpoly; ALL] THEN
+     REPEAT COND_CASES_TAC THEN REWRITE_TAC[NOT_CONS_NIL] THENL [
+       UNDISCH_TAC `norm_cpoly t = []` THEN ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     POP_ASSUM MP_TAC THEN ASM_SIMP_TAC[DE_MORGAN_THM]);;
+
+let norm_cpoly_last = prove(`!cs. ~(cpoly cs = cpoly []) 
+			    ==> ~(LAST (norm_cpoly cs) = Cx (&0))`,
+   REWRITE_TAC[cpoly_neq0] THEN
+     LIST_INDUCT_TAC THEN REWRITE_TAC[MEM; norm_cpoly] THEN
+     STRIP_TAC THEN REPEAT COND_CASES_TAC THEN ASM_REWRITE_TAC[LAST] THENL [
+       UNDISCH_TAC `c = h:complex` THEN ASM_REWRITE_TAC[];
+       POP_ASSUM MP_TAC THEN ASM_REWRITE_TAC[norm_cpoly_nil; NOT_ALL; GSYM EX_MEM; CONJ_ACI];
+       UNDISCH_TAC `norm_cpoly t = []` THEN REWRITE_TAC[norm_cpoly_nil; GSYM ALL_MEM] THEN
+	 DISCH_THEN (MP_TAC o SPEC `c:complex`) THEN ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     FIRST_X_ASSUM MATCH_MP_TAC THEN EXISTS_TAC `c:complex` THEN ASM_REWRITE_TAC[]);;
+
+let length1_eq = prove(`!s. LENGTH s = 1 <=> ?h:A. s = [h]`,
+   LIST_INDUCT_TAC THEN REWRITE_TAC[LENGTH; EQ_SYM_EQ; NOT_CONS_NIL] THEN TRY ARITH_TAC THEN
+     EQ_TAC THEN STRIP_TAC THENL [
+       EXISTS_TAC `h:A` THEN
+	 SUBGOAL_THEN `t:(A)list = []` (fun th -> REWRITE_TAC[th]) THEN
+	 REWRITE_TAC[GSYM LENGTH_EQ_NIL] THEN POP_ASSUM MP_TAC THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     POP_ASSUM MP_TAC THEN SIMP_TAC[injectivity "list"; LENGTH; ONE]);;
+
+let length2_eq = prove(`!s. LENGTH s = 2 <=> ?a1 a2:A. s = [a1; a2]`,
+   LIST_INDUCT_TAC THEN REWRITE_TAC[LENGTH; NOT_CONS_NIL] THEN TRY ARITH_TAC THEN
+     EQ_TAC THEN STRIP_TAC THENL [
+       SUBGOAL_THEN `LENGTH (t:(A)list) = 1` MP_TAC THENL [
+	 POP_ASSUM MP_TAC THEN ARITH_TAC;
+	 ALL_TAC
+       ] THEN
+	 REWRITE_TAC[length1_eq] THEN STRIP_TAC THEN
+	 MAP_EVERY EXISTS_TAC [`h:A`; `h':A`] THEN ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     POP_ASSUM MP_TAC THEN SIMP_TAC[injectivity "list"; LENGTH; TWO; ONE]);;
+
+let cpoly_root_exists = prove(`!cs. 2 <= LENGTH cs /\ ~(LAST cs = Cx (&0))
+			 ==> ?y. cpoly cs y = Cx (&0)`,
+   REPEAT STRIP_TAC THEN
+     SUBGOAL_THEN `~(cs:(complex)list = [])` ASSUME_TAC THENL [
+       ASM_SIMP_TAC[GSYM LENGTH_EQ_NIL; ARITH_RULE `2 <= n ==> ~(n = 0)`];
+       ALL_TAC
+     ] THEN
+     ASM_REWRITE_TAC[cpoly_vsum] THEN ABBREV_TAC `n = LENGTH (cs:(complex)list)` THEN
+     MP_TAC (SPECL[`\i. EL i cs:complex`; `n - 1`] FTA) THEN REWRITE_TAC[] THEN
+     DISCH_THEN MATCH_MP_TAC THEN
+     DISJ2_TAC THEN REWRITE_TAC[NOT_FORALL_THM; NOT_IMP; IN_NUMSEG] THEN
+     EXISTS_TAC `n - 1` THEN CONJ_TAC THENL [ ASM_ARITH_TAC; ALL_TAC ] THEN
+     EXPAND_TAC "n" THEN ASM_SIMP_TAC[GSYM LAST_EL]);;
+
+let cpoly_linear_factor = prove(`!cs. 2 <= LENGTH cs /\ ~(LAST cs = Cx (&0))
+				  ==> ?y bs. LAST bs = LAST cs /\ LENGTH bs = LENGTH cs - 1 /\
+				      (!z. cpoly cs z = (z - y) * cpoly bs z)`,
+   REPEAT STRIP_TAC THEN
+     ABBREV_TAC `n = LENGTH (cs:(complex)list)` THEN
+     MP_TAC (SPEC `cs:(complex)list` cpoly_root_exists) THEN ASM_REWRITE_TAC[] THEN STRIP_TAC THEN
+     MP_TAC (SPECL[`y:complex`; `\i. EL i cs:complex`; `n - 1`] COMPLEX_POLYFUN_LINEAR_FACTOR_ROOT) THEN
+     POP_ASSUM MP_TAC THEN
+     SUBGOAL_THEN `~(cs:(complex)list = [])` ASSUME_TAC THENL [
+       REWRITE_TAC[GSYM LENGTH_EQ_NIL] THEN ASM_REWRITE_TAC[] THEN ASM_ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     ASM_REWRITE_TAC[cpoly_vsum] THEN DISCH_TAC THEN ASM_REWRITE_TAC[] THEN STRIP_TAC THEN
+     MAP_EVERY EXISTS_TAC [`y:complex`; `table (b:num->complex) (n - 1)`] THEN
+     ASM_SIMP_TAC[length_table; GSYM LENGTH_EQ_NIL; ARITH_RULE `2 <= n ==> ~(n - 1 = 0)`] THEN
+     CONJ_TAC THENL [
+       POP_ASSUM MP_TAC THEN
+	 REWRITE_TAC[COMPLEX_RING `a = (z - y) * x <=> a - z * x + y * x = Cx (&0)`] THEN
+	 SIMP_TAC[GSYM VSUM_COMPLEX_LMUL; FINITE_NUMSEG] THEN
+	 SUBGOAL_THEN `!z. vsum (0..n - 1 - 1) (\i. z * b i * z pow i) = vsum (0..n - 1) (\i. (if i = 0 then Cx (&0) else b (i - 1)) * z pow i)` (fun th -> REWRITE_TAC[th]) THENL [
+	   GEN_TAC THEN
+	     SUBGOAL_THEN `vsum (0..n - 1 - 1) (\i. z * b i * z pow i) = vsum (1..n - 1) (\i. b (i - 1) * z pow i)` ASSUME_TAC THENL [
+	       ASM_SIMP_TAC[VSUM_OFFSET_0; ARITH_RULE `2 <= n ==> 1 <= n - 1`] THEN
+		 REWRITE_TAC[ARITH_RULE `(i + 1) - 1 = i`; COMPLEX_RING `z * b * z pow i = b * (z * z pow i)`] THEN
+		 REWRITE_TAC[GSYM complex_pow; ADD1];
+	       ALL_TAC
+	     ] THEN
+	     ASM_REWRITE_TAC[] THEN MATCH_MP_TAC EQ_SYM THEN MATCH_MP_TAC VSUM_EQ_SUPERSET THEN
+	     REWRITE_TAC[FINITE_NUMSEG; SUBSET; IN_NUMSEG] THEN 
+	     CONJ_TAC THENL [ ARITH_TAC; ALL_TAC] THEN
+	     CONJ_TAC THENL [
+	       REPEAT STRIP_TAC THEN COND_CASES_TAC THEN REWRITE_TAC[] THEN ASM_ARITH_TAC;
+	       ALL_TAC
+	     ] THEN
+	     REPEAT STRIP_TAC THEN
+             SUBGOAL_THEN `x = 0` ASSUME_TAC THENL [ ASM_ARITH_TAC; ALL_TAC ] THEN
+	     ASM_REWRITE_TAC[COMPLEX_VEC_0; COMPLEX_MUL_LZERO];
+	   ALL_TAC
+	 ] THEN
+	 SUBGOAL_THEN `!z. vsum (0..n - 1 - 1) (\i. y * b i * z pow i) = vsum (0..n - 1) (\i. (if i = n - 1 then Cx (&0) else y * b i) * z pow i)` (fun th -> REWRITE_TAC[th]) THENL [
+	   GEN_TAC THEN MATCH_MP_TAC EQ_SYM THEN MATCH_MP_TAC VSUM_EQ_SUPERSET THEN
+	     REWRITE_TAC[FINITE_NUMSEG; SUBSET; IN_NUMSEG] THEN 
+	     CONJ_TAC THENL [ ARITH_TAC; ALL_TAC] THEN
+	     CONJ_TAC THENL [
+	       REPEAT STRIP_TAC THEN COND_CASES_TAC THEN REWRITE_TAC[COMPLEX_MUL_ASSOC] THEN ASM_ARITH_TAC;
+	       ALL_TAC
+	     ] THEN
+	     REPEAT STRIP_TAC THEN
+             SUBGOAL_THEN `x = n - 1` ASSUME_TAC THENL [ ASM_ARITH_TAC; ALL_TAC ] THEN
+	     ASM_REWRITE_TAC[COMPLEX_VEC_0; COMPLEX_MUL_LZERO];
+	   ALL_TAC
+	 ] THEN
+	 SIMP_TAC[GSYM VSUM_SUB; GSYM VSUM_ADD; FINITE_NUMSEG] THEN
+         REWRITE_TAC[COMPLEX_RING `!a b c z. a * z - b * z + c * z = (a - b + c) * z`] THEN
+	 REWRITE_TAC[COMPLEX_POLYFUN_EQ_0; IN_NUMSEG] THEN
+         DISCH_THEN (MP_TAC o SPEC `n - 1`) THEN
+	 ANTS_TAC THENL [ ARITH_TAC; ALL_TAC ] THEN
+	 ASM_SIMP_TAC[ARITH_RULE `2 <= n ==> ~(n - 1 = 0)`; COMPLEX_RING `c - b + Cx (&0) = Cx (&0) <=> c = b`] THEN
+         SUBGOAL_THEN `~(table b (n - 1) = []:(complex)list)` ASSUME_TAC THENL [
+	   ASM_SIMP_TAC[GSYM LENGTH_EQ_NIL; length_table; ARITH_RULE `2 <= n ==> ~(n - 1 = 0)`];
+	   ALL_TAC
+	 ] THEN
+	 ASM_SIMP_TAC[LAST_EL; length_table; el_table; ARITH_RULE `2 <= n ==> n - 1 - 1 < n - 1`];
+       ALL_TAC
+     ] THEN
+     GEN_TAC THEN REWRITE_TAC[COMPLEX_EQ_MUL_LCANCEL] THEN DISJ2_TAC THEN
+     MATCH_MP_TAC VSUM_EQ THEN REWRITE_TAC[IN_NUMSEG] THEN REPEAT STRIP_TAC THEN
+     ASM_SIMP_TAC[el_table; ARITH_RULE `2 <= n /\ x <= n - 1 - 1 ==> x < n - 1`]);;
+
+let cpoly_factors = prove(`!cs. 2 <= LENGTH cs /\ ~(LAST cs = Cx (&0))
+	==> (!x. cpoly cs x = LAST cs * cproduct (1..LENGTH cs - 1) (\i. x - roots cs i))`,
+   GEN_TAC THEN STRIP_TAC THEN REWRITE_TAC[roots] THEN CONV_TAC SELECT_CONV THEN
+     REPEAT (POP_ASSUM MP_TAC) THEN 
+     ABBREV_TAC `n = LENGTH (cs:(complex)list)` THEN POP_ASSUM MP_TAC THEN
+     SPEC_TAC (`cs:(complex)list`, `cs:(complex)list`) THEN SPEC_TAC (`n:num`, `n:num`) THEN
+     INDUCT_TAC THENL [ ARITH_TAC; ALL_TAC ] THEN REPEAT STRIP_TAC THEN
+     ASM_CASES_TAC `n = 1` THENL [
+       UNDISCH_TAC `LENGTH (cs:(complex)list) = SUC n` THEN
+	 ASM_REWRITE_TAC[ARITH; length2_eq] THEN STRIP_TAC THEN
+	 UNDISCH_TAC `~(LAST cs = Cx (&0))` THEN
+	 ASM_REWRITE_TAC[LAST; NOT_CONS_NIL; cpoly; LENGTH; ARITH] THEN REPEAT DISCH_TAC THEN
+	 EXISTS_TAC `\i. if i = 1 then -- a1 / a2 else ii` THEN
+	 GEN_TAC THEN REWRITE_TAC[COMPLEX_MUL_RZERO; COMPLEX_ADD_RID] THEN
+	 REWRITE_TAC[NUMSEG_SING; CPRODUCT_SING] THEN
+	 POP_ASSUM MP_TAC THEN CONV_TAC COMPLEX_FIELD;
+       ALL_TAC
+     ] THEN
+     MP_TAC (SPEC `cs:(complex)list` cpoly_linear_factor) THEN ASM_REWRITE_TAC[] THEN
+     STRIP_TAC THEN
+     FIRST_X_ASSUM (MP_TAC o SPEC `bs:(complex)list`) THEN ASM_REWRITE_TAC[] THEN
+     ANTS_TAC THENL [ ARITH_TAC; ALL_TAC ] THEN
+     ANTS_TAC THENL [ ASM_ARITH_TAC; ALL_TAC ] THEN
+     STRIP_TAC THEN
+     EXISTS_TAC `\i:num. if i < n then r i else y:complex` THEN GEN_TAC THEN
+     ASM_REWRITE_TAC[ARITH_RULE `SUC n - 1 = n`] THEN
+     ASM_SIMP_TAC[CPRODUCT_CLAUSES_RIGHT; ARITH_RULE `2 <= SUC n ==> 0 < n /\ 1 <= n`; LT_REFL] THEN
+     ONCE_REWRITE_TAC[COMPLEX_RING `(x - y) * l * p = l * p * (x - y)`] THEN
+     REWRITE_TAC[COMPLEX_EQ_MUL_LCANCEL] THEN DISJ2_TAC THEN
+     REWRITE_TAC[COMPLEX_EQ_MUL_RCANCEL] THEN DISJ1_TAC THEN
+     MATCH_MP_TAC CPRODUCT_EQ THEN REWRITE_TAC[IN_NUMSEG] THEN REPEAT STRIP_TAC THEN
+     COND_CASES_TAC THEN ASM_ARITH_TAC);;
+
+let cpoly_at_root = prove(`!cs i. 2 <= LENGTH cs /\ ~(LAST cs = Cx (&0)) /\
+			    1 <= i /\ i < LENGTH cs
+			    ==> cpoly cs (roots cs i) = Cx (&0)`,
+   REPEAT STRIP_TAC THEN ASM_SIMP_TAC[cpoly_factors] THEN
+     REWRITE_TAC[COMPLEX_ENTIRE] THEN DISJ2_TAC THEN
+     SIMP_TAC[CPRODUCT_EQ_0; FINITE_NUMSEG; IN_NUMSEG] THEN
+     EXISTS_TAC `i:num` THEN REWRITE_TAC[COMPLEX_SUB_REFL] THEN
+     ASM_ARITH_TAC);;
+
+let cpoly_root_eq = prove(`!cs y. 2 <= LENGTH cs /\ ~(LAST cs = Cx (&0)) /\
+			    cpoly cs y = Cx (&0)
+			      ==> ?i. 1 <= i /\ i < LENGTH cs /\ roots cs i = y`,
+   REPEAT STRIP_TAC THEN POP_ASSUM MP_TAC THEN ASM_SIMP_TAC[cpoly_factors] THEN
+     ASM_SIMP_TAC[COMPLEX_ENTIRE; CPRODUCT_EQ_0; FINITE_NUMSEG; IN_NUMSEG; COMPLEX_SUB_0] THEN
+     STRIP_TAC THEN EXISTS_TAC `x:num` THEN ASM_REWRITE_TAC[] THEN
+     ASM_ARITH_TAC);;
+
+
+
+let monomial_eval = define `!f i k t. monomial_eval [] i f = Cx (&1) /\ 
+  monomial_eval (CONS k t) i f = f i pow k * monomial_eval t (SUC i) f`;;
+
+let m_poly = define `!f c m t. m_poly [] f = Cx (&0) /\
+  m_poly (CONS (c, m) t) f = c * monomial_eval m 0 f + m_poly t f`;;
+
+let list2_dim = new_definition `!s:((A)list)list.
+  list2_dim s = ITLIST (\m k. if k < LENGTH m then LENGTH m else k) s 0`;;
+
+let is_sym = new_definition `!n (g:(num->A)->B). is_sym n g
+  <=> (!f p. p permutes (0..n - 1) ==> g (f o p) = g f)`;;
+
+let elem_sym_list = define `elem_sym_list 0 0 = [(Cx (&1), [])] /\
+   elem_sym_list 0 (SUC k) = [] /\
+   elem_sym_list (SUC n) 0 = MAP (\(c,m). c, CONS 0 m) (elem_sym_list n 0) /\
+   elem_sym_list (SUC n) (SUC k) = APPEND 
+    (MAP (\(c,m). c, CONS 1 m) (elem_sym_list n k))
+    (MAP (\(c,m). c, CONS 0 m) (elem_sym_list n (SUC k)))`;;
+
+let elem_sym_list_conv = REPEATC (
+  CHANGED_CONV (DEPTH_CONV num_CONV THENC REWRITE_CONV[elem_sym_list; MAP; APPEND]))
+  THENC NUM_REDUCE_CONV;;
+
+
+prove(`!n k. k <= n ==> is_sym n (m_poly (elem_sym_list n k))`,
+   INDUCT_TAC THEN INDUCT_TAC THEN REWRITE_TAC[elem_sym_list; is_sym] THEN CONV_TAC NUM_REDUCE_CONV THEN REPEAT STRIP_TAC THENL [
+     POP_ASSUM MP_TAC THEN REWRITE_TAC[NUMSEG_SING; PERMUTES_SING] THEN
+       DISCH_TAC THEN ASM_REWRITE_TAC[I_O_ID];
+     ASM_ARITH_TAC;
+   ]);;
+
+
+prove(`cproduct (0..n) (\i. x - r i) = 
+  cpoly (rev_table n (\k. m_poly (elem_sym_list n k) r)) x`,
+      ALL_TAC);;
+
+
+let cproduct_permutes = prove(`!(f:A->complex) s p. p permutes s ==>
+				cproduct s (f o p) = cproduct s f`,
+   REPEAT STRIP_TAC THEN
+     ASM_MESON_TAC[CPRODUCT_IMAGE; PERMUTES_INJECTIVE; PERMUTES_IMAGE]);;
+
+let sym_prod_roots = prove(`!x n. is_sym (n + 1) (\r. cproduct (0..n) (\i. x - r i))`,
+   REPEAT GEN_TAC THEN REWRITE_TAC[is_sym] THEN
+     REWRITE_TAC[ARITH_RULE `(n + 1) - 1 = n`] THEN REPEAT STRIP_TAC THEN
+     SUBGOAL_THEN `(\i:num. x - ((f:num->complex) o p) i) = (\i. x - f i) o p` ASSUME_TAC THENL [
+       REWRITE_TAC[FUN_EQ_THM; o_THM];
+       ALL_TAC
+     ] THEN
+     ASM_SIMP_TAC[cproduct_permutes]);;
+
+let sym_homogeneous_components = prove(`!a b n k1 k2. is_sym n (\v. a v + b v) /\
+					 (!v t. a (\i. t * v i) = t pow k1 * a v) /\
+					 (!v t. b (\i. t * v i) = t pow k2 * b v) /\
+					 ~(k1 = k2)
+					 ==> is_sym n a /\ is_sym n b`,
+   REWRITE_TAC[is_sym; AND_FORALL_THM; TAUT `(A ==> B) /\ (A ==> C) <=> (A ==> B /\ C)`] THEN
+     REPEAT GEN_TAC THEN STRIP_TAC THEN REPEAT GEN_TAC THEN DISCH_TAC THEN
+     SUBGOAL_THEN `!k1 k2 a1 b1 a2 b2. k1 < k2 ==> ((!t. t pow k1 * a1 + t pow k2 * b1 = t pow k1 * a2 + t pow k2 * b2) <=> (a1 = a2 /\ b1 = b2))` ASSUME_TAC THENL [
+       REPEAT STRIP_TAC THEN
+	 EQ_TAC THENL [ ALL_TAC; REPEAT STRIP_TAC THEN ASM_REWRITE_TAC[] ] THEN
+	 REWRITE_TAC[COMPLEX_RING `t1 * a1 + t2 * b1 = t1 * a2 + t2 * b2 <=> t1 * (a1 - a2) = t2 * (b2 - b1)`] THEN
+	 DISCH_TAC THEN
+	 FIRST_ASSUM (MP_TAC o SPEC `Cx (&1)`) THEN
+	 REWRITE_TAC[COMPLEX_POW_ONE; COMPLEX_MUL_LID] THEN DISCH_TAC THEN
+	 FIRST_X_ASSUM (MP_TAC o AP_TERM `( * ) (inv (Cx (&2) pow k1'))` o SPEC `Cx (&2)`) THEN
+	 REWRITE_TAC[COMPLEX_MUL_ASSOC] THEN
+	 ASM_SIMP_TAC[COMPLEX_RING `~(Cx (&2) = Cx (&0))`; COMPLEX_POW_EQ_0; COMPLEX_MUL_LINV] THEN
+	 REWRITE_TAC[COMPLEX_MUL_LID] THEN
+	 ASM_CASES_TAC `b2 - b1 = Cx (&0)` THENL [
+	   DISCH_THEN (K ALL_TAC) THEN POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN
+	     CONV_TAC COMPLEX_RING;
+	   ALL_TAC
+	 ] THEN
+	 DISCH_THEN (MP_TAC o AP_TERM `( * ) (inv (b2 - b1))`) THEN
+	 REWRITE_TAC[COMPLEX_RING `inv b * a * b = (inv b * b) * a`] THEN
+	 ASM_SIMP_TAC[COMPLEX_MUL_LINV; COMPLEX_MUL_LID] THEN
+         SUBGOAL_THEN `?s. k2' = k1' + s /\ 0 < s` STRIP_ASSUME_TAC THENL [
+	   EXISTS_TAC `k2' - k1':num` THEN
+	     UNDISCH_TAC `k1' < k2':num` THEN ARITH_TAC;
+	   ALL_TAC
+	 ] THEN
+	 ASM_REWRITE_TAC[COMPLEX_POW_ADD; COMPLEX_MUL_ASSOC] THEN
+	 ASM_SIMP_TAC[COMPLEX_RING `~(Cx (&2) = Cx (&0))`; COMPLEX_POW_EQ_0; COMPLEX_MUL_LINV] THEN
+	 REWRITE_TAC[COMPLEX_MUL_LID] THEN ONCE_REWRITE_TAC[EQ_SYM_EQ] THEN
+         DISCH_THEN (MP_TAC o MATCH_MP COMPLEX_POW_EQ_1) THEN
+	 REWRITE_TAC[COMPLEX_NORM_NUM] THEN POP_ASSUM MP_TAC THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `!t. t pow k1 * a ((f:num->complex) o (p:num->num)) + t pow k2 * b (f o p) = t pow k1 * a f + t pow k2 * b f` ASSUME_TAC THENL [
+       GEN_TAC THEN
+	 FIRST_X_ASSUM (MP_TAC o SPECL[`\i:num. t * f i`; `p:num->num`]) THEN ASM_REWRITE_TAC[] THEN
+	 SUBGOAL_THEN `(\i:num. (t * f i)) o (p:num->num) = \i. t * (f o p) i` (fun th -> REWRITE_TAC[th]) THENL [
+	   REWRITE_TAC[FUN_EQ_THM; o_THM];
+	   ALL_TAC
+	 ] THEN
+	 ASM_REWRITE_TAC[ETA_AX];
+       ALL_TAC
+     ] THEN
+     ASM_CASES_TAC `k1 < k2:num` THENL [
+       FIRST_X_ASSUM (MP_TAC o SPECL[`k1:num`; `k2:num`; `a ((f:num->complex) o (p:num->num)):complex`; `b ((f:num->complex) o (p:num->num)):complex`; `a (f:num->complex):complex`; `b (f:num->complex):complex`]) THEN
+	 ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+       FIRST_X_ASSUM (MP_TAC o SPECL[`k2:num`; `k1:num`; `b ((f:num->complex) o (p:num->num)):complex`; `a ((f:num->complex) o (p:num->num)):complex`; `b (f:num->complex):complex`; `a (f:num->complex):complex`]) THEN
+	 ASM_REWRITE_TAC[COMPLEX_ADD_AC] THEN
+       ASM_SIMP_TAC[ARITH_RULE `~(k1 = k2) /\ ~(k1 < k2) ==> k2 < k1:num`]);;
+
+
+prove(`is_sym n (m_poly cs) /\ ALL (\(c, m). Im c = &0 /\ integer (Re c)) cs
+   ==> ?a. (!k. k <= n ==> integer (a k)) /\
+           (!f. m_poly cs f = vsum (0..n) (\k. Cx (a k) * m_poly (elem_sym_list n k) f))`,
+  ALL_TAC);;
+
+
+let is_algebraic_ii = prove(`is_algebraic ii`,
+   REWRITE_TAC[is_algebraic] THEN
+     EXISTS_TAC `[Cx (&1); Cx (&0); Cx (&1)]` THEN
+     REPEAT CONJ_TAC THENL [
+       REWRITE_TAC[cpoly_neq0] THEN
+	 EXISTS_TAC `Cx (&1)` THEN REWRITE_TAC[MEM] THEN CONV_TAC COMPLEX_RING;
+       REWRITE_TAC[all_integer; ALL; IM_CX; RE_CX; INTEGER_CLOSED];
+       ALL_TAC
+     ] THEN
+     REWRITE_TAC[cpoly] THEN CONV_TAC COMPLEX_RING);;
+
+let is_algebraic_integer = prove(`!a. integer a ==> is_algebraic (Cx a)`,
+   REPEAT STRIP_TAC THEN REWRITE_TAC[is_algebraic] THEN
+     EXISTS_TAC `[-- Cx a; Cx (&1)]` THEN
+     REPEAT CONJ_TAC THENL [
+       REWRITE_TAC[cpoly_neq0] THEN
+	 EXISTS_TAC `Cx (&1)` THEN REWRITE_TAC[MEM] THEN CONV_TAC COMPLEX_RING;
+       ASM_SIMP_TAC[all_integer; ALL; IM_NEG; RE_NEG; IM_CX; RE_CX; INTEGER_CLOSED; REAL_NEG_0];
+       ALL_TAC
+     ] THEN
+     REWRITE_TAC[cpoly] THEN CONV_TAC COMPLEX_RING);;
+
+let is_algebraic_num = prove(`!n. is_algebraic (Cx (&n))`,
+   SIMP_TAC[INTEGER_CLOSED; is_algebraic_integer]);;
+
+
+prove(`!a. is_algebraic a /\ is_algebraic b ==> is_algebraic (a + b)`,
+      ALL_TAC);;
+
+prove(`!a. is_algebraic a /\ is_algebraic b ==> is_algebraic (a * b)`,
+      ALL_TAC);;
+
+
+let algebraic_inv = prove(`!a. is_algebraic a ==> is_algebraic (inv a)`,
+   GEN_TAC THEN ASM_CASES_TAC `a = Cx (&0)` THENL [
+     ASM_SIMP_TAC[COMPLEX_INV_0];
+     ALL_TAC
+   ] THEN
+     REWRITE_TAC[is_algebraic; all_integer] THEN REPEAT STRIP_TAC THEN
+     EXISTS_TAC `REVERSE (cs:(complex)list)` THEN
+     REPEAT CONJ_TAC THENL [
+       UNDISCH_TAC `~(cpoly cs = cpoly [])` THEN
+	 REWRITE_TAC[cpoly_neq0] THEN STRIP_TAC THEN
+	 EXISTS_TAC `c:complex` THEN ASM_REWRITE_TAC[mem_reverse];
+       ASM_REWRITE_TAC[all_integer; all_reverse];
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `!s. a pow (LENGTH s - 1) * cpoly (REVERSE s) (inv a) = cpoly s a` ASSUME_TAC THENL [
+       LIST_INDUCT_TAC THEN REWRITE_TAC[REVERSE; cpoly; LENGTH; COMPLEX_MUL_RZERO] THEN
+	 REWRITE_TAC[ARITH_RULE `SUC n - 1 = n`] THEN
+	 ASM_CASES_TAC `LENGTH (t:(complex)list) = 0` THENL [
+	   POP_ASSUM MP_TAC THEN REWRITE_TAC[LENGTH_EQ_NIL] THEN DISCH_TAC THEN
+	     ASM_REWRITE_TAC[LENGTH; REVERSE; APPEND; cpoly; cpoly_sing; complex_pow] THEN
+	     CONV_TAC COMPLEX_RING;
+	   ALL_TAC
+	 ] THEN
+	 SUBGOAL_THEN `SUC (LENGTH (t:(complex)list) - 1) = LENGTH t` ASSUME_TAC THENL [
+	   POP_ASSUM MP_TAC THEN ARITH_TAC;
+	   ALL_TAC
+	 ] THEN
+	 FIRST_ASSUM (fun th -> ONCE_REWRITE_TAC[SYM th]) THEN
+	 ASM_REWRITE_TAC[complex_pow; cpoly_append; GSYM COMPLEX_MUL_ASSOC; COMPLEX_ADD_LDISTRIB] THEN
+	 ASM_REWRITE_TAC[COMPLEX_MUL_ASSOC; GSYM complex_pow; length_reverse; COMPLEX_POW_INV] THEN
+	 ASM_SIMP_TAC[COMPLEX_MUL_RINV; COMPLEX_POW_EQ_0; cpoly_sing] THEN
+         CONV_TAC COMPLEX_RING;
+       ALL_TAC
+     ] THEN
+     FIRST_X_ASSUM (MP_TAC o SPEC `cs:(complex)list`) THEN
+     ASM_REWRITE_TAC[] THEN
+     ONCE_REWRITE_TAC[COMPLEX_RING `Cx (&0) = a pow (LENGTH (cs:(complex)list) - 1) * Cx (&0)`] THEN
+     REWRITE_TAC[COMPLEX_EQ_MUL_LCANCEL] THEN
+     ASM_SIMP_TAC[COMPLEX_POW_EQ_0; COMPLEX_MUL_RZERO]);;
+     

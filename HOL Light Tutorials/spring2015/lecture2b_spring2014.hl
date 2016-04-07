@@ -1,0 +1,147 @@
+(* Let's see how HOL Light can be extended with new definitions and
+   functions. *)
+(* Define a function insert which takes a natural number x and
+   a list and inserts x in the list such that
+   all numbers before the inserted number x are smaller than x. *)
+(* The HOL Light function "define" accepts recursive definitions. *)
+(* Lists in HOL Light are constructed with two constants:
+   [] (the empty list) and CONS.
+   CONS takes two arguments: an element and a list.
+   CONS h t denotes a list with the head element h and
+   the rest elements t. *)
+(* In our definition, we consider two cases for the second argument:
+   the empty list, a non-empty list. *)
+let insert = define `insert x [] = [x]
+  /\ insert x (CONS h t) = 
+  if x < h then CONS x (CONS h t) else CONS h (insert x t)`;;
+
+(* Define a function which uses "insert" to sort a given list. *)
+let ins_sort = define `ins_sort [] = [] /\
+  ins_sort (CONS h t) = insert h (ins_sort t)`;;
+
+(* Let's see how our definitions work. *)
+let tm = `ins_sort [3; 1; 5]`;;
+(* REWRITE_CONV[] rewrites the given term with our definitions. *)
+REWRITE_CONV[ins_sort; insert] tm;;
+(* In order to get the final result, we need to rewrite with
+   a special theorem ARITH which defines some basic
+   arithmetic properties of natural numbers. *)
+REWRITE_CONV[ins_sort; insert; ARITH] tm;;
+
+(* Define a predicate (predicates in HOL Light are function
+   from any type to the Boolean type) which asserts that
+   a given list is sorted. *)
+let sorted = define `(sorted [] <=> T) /\ (sorted [h] <=> T)
+  /\ (sorted (CONS h1 (CONS h2 t)) <=> h1 <= h2 /\ sorted (CONS h2 t))`;;
+
+(* Let's check that ins_sort produces sorted lists *)
+let tm = `ins_sort [4;5;2;4;1]`;;
+REWRITE_CONV[ins_sort; insert; ARITH] tm;;
+
+let tm2 = `sorted (ins_sort [4;5;2;4;1])`;;
+let th2 = REWRITE_CONV[ins_sort; insert; ARITH] tm2;;
+(* Note: REWRITE_CONV[] cannot be applied to a theorem,
+   but there is a variation of this function, REWRITE_RULE[],
+   which works for theorems. *)
+REWRITE_RULE[sorted; ARITH] th2;;
+
+(* The next list is not sorted. *)
+let tm = `sorted [1;2;1]`;;
+REWRITE_CONV[sorted; ALL; ARITH] tm;;
+
+(* A larger example *)
+let tm = `sorted [1;2;3;4;5;6;7;8;9;10;11;12;13;14;14]`;;
+REWRITE_CONV[sorted; ARITH] tm;;
+
+
+(* Let's prove that ins_sort yields a sorted list for all
+   possible lists. In other words, let's prove the theorem
+   |- !s. sorted (ins_sort s) *)
+(* We need several auxiliary results in order to get this theorem. *)
+
+(* Note: you may skip to the final theorem.
+   HOL Light reference manual
+   http://www.cl.cam.ac.uk/~jrh13/hol-light/reference.html
+   contains information about all tactics used in the proofs below. *)
+   
+(* HD means the head element of a list. 
+   It is not defined for the empty list. *)
+(* The next lemma states the the head of (insert x t) is either x or
+   the head of t. *)
+(* The proof is by induction on the list t. *)
+let hd_insert = prove(`!x t. HD (insert x t) = x \/ HD (insert x t) = HD t`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[insert; HD] THEN
+     COND_CASES_TAC THEN REWRITE_TAC[HD]);;
+
+(* The next lemma gives an alternative definition of
+   the sorted predicate for lists in the form (CONS h t). *)
+let sorted_cons = prove(`!t h. sorted (CONS h t) <=> 
+			  (t = [] \/ (h <= HD t /\ sorted t))`,
+	LIST_INDUCT_TAC THEN REWRITE_TAC[sorted; NOT_CONS_NIL; HD]);;
+
+(* This lemma establishes the key property in our final proof *)
+let sorted_insert = prove(`!x s. sorted s ==> sorted (insert x s)`,
+      GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[sorted; insert; ALL] THEN
+	STRIP_TAC THEN
+	COND_CASES_TAC THENL
+	[
+	  ASM_REWRITE_TAC[sorted] THEN
+	    POP_ASSUM MP_TAC THEN
+	    ARITH_TAC;
+	  ALL_TAC
+	] THEN
+	REWRITE_TAC[sorted_cons] THEN
+	DISJ2_TAC THEN
+	CONJ_TAC THENL
+	[
+	  UNDISCH_TAC `sorted (CONS h t)` THEN
+	    REWRITE_TAC[sorted_cons] THEN
+	    STRIP_TAC THENL
+	    [
+	      ASM_REWRITE_TAC[insert; HD] THEN
+		UNDISCH_TAC `~(x < h)` THEN ARITH_TAC;
+	      ALL_TAC
+	    ] THEN
+	    DISJ_CASES_TAC (SPECL[`x:num`; `t:(num)list`] hd_insert) THENL
+	    [
+	      ASM_REWRITE_TAC[] THEN
+		UNDISCH_TAC `~(x < h)` THEN ARITH_TAC;
+	      ALL_TAC
+	    ] THEN
+	    ASM_REWRITE_TAC[];
+	  ALL_TAC
+	] THEN
+	FIRST_X_ASSUM MATCH_MP_TAC THEN
+	UNDISCH_TAC `sorted (CONS h t)` THEN
+	REWRITE_TAC[sorted_cons] THEN
+	STRIP_TAC THEN ASM_REWRITE_TAC[sorted]);;
+
+(* The final theorem. *)
+let sorted_ins_sort = prove(`!s. sorted (ins_sort s)`,
+(* LIST_INDUCT_TAC is the induction tactic for lists. *)
+(* It works for goals in the form ?- !s. P s
+   where s is a list.
+   The tactic yields two subgoals: 
+   ?- P [] and  P t ?- P (CONS h t) *)
+   LIST_INDUCT_TAC THENL
+     [
+       (* The first subgoal 
+	  ?- sorted (ins_sort [])
+	  can be easily proved with definitions
+	  of ins_sort and sorted *)
+       REWRITE_TAC[ins_sort; sorted];
+       (* Rewrite with the definition of ins_sort to get
+	  sorted (ins_sort t) ?- sorted (insert h (ins_sort t)) *)
+       REWRITE_TAC[ins_sort] THEN
+	 (* The tactic MATCH_MP_TAC takes one argument which must be
+	    a theorem in the form |- p ==> q.
+	    If the goal has the form ?- q (or if it can be converted
+	    to this form with substitutions), then
+	    a new subgoal will be ?- p *)
+	 MATCH_MP_TAC sorted_insert THEN
+	 (* Finish the proof by rewriting with the assumption *)
+	 ASM_REWRITE_TAC[]
+     ]);;
+
+
+

@@ -1,0 +1,277 @@
+let lemma1 = prove(`!n. 1 <= 2 EXP n`,
+		   INDUCT_TAC THENL [
+		     ARITH_TAC;
+		     ALL_TAC
+		   ] THEN
+		     REWRITE_TAC[EXP] THEN
+		     ASM_ARITH_TAC);;
+
+let ex1 = prove(`!n. n < 2 EXP n`,
+   INDUCT_TAC THENL [
+     ARITH_TAC;
+     ALL_TAC
+   ] THEN
+     REWRITE_TAC[EXP; ADD1] THEN
+(*     ASM_ARITH_TAC also works *)
+     MATCH_MP_TAC (ARITH_RULE `a < b /\ c <= b ==> a + c < 2 * b`) THEN
+     ASM_REWRITE_TAC[lemma1]);;
+
+let ex2 = prove(`!n. 4 <= n ==> 2 EXP n < FACT n`,
+		INDUCT_TAC THENL [
+		  ARITH_TAC;
+		  ALL_TAC
+		] THEN
+		  REWRITE_TAC[EXP; FACT] THEN
+		  DISCH_TAC THEN
+		  ASM_CASES_TAC `4 <= n` THENL [
+		    MATCH_MP_TAC LT_MULT2 THEN
+		    CONJ_TAC THENL [
+		      ASM_ARITH_TAC;
+		      ALL_TAC
+		    ] THEN
+		      ASM_SIMP_TAC[];
+		    ALL_TAC
+		  ] THEN
+		  SUBGOAL_THEN `n = 3` ASSUME_TAC THENL [
+		    ASM_ARITH_TAC;
+		    ALL_TAC
+		  ] THEN
+		      ASM_REWRITE_TAC[] THEN
+		    ARITH_TAC);;
+
+let strong_induct = prove(`!P. (!n. (!m. m < n ==> P m) ==> P n) ==> (!n. P n)`,
+			  GEN_TAC THEN
+			    DISCH_TAC THEN
+			    SUBGOAL_THEN `!k n. n < k ==> P n` ASSUME_TAC THENL [
+			      INDUCT_TAC THENL [
+				ARITH_TAC;
+				ALL_TAC
+			      ] THEN
+				GEN_TAC THEN
+				REWRITE_TAC[LT] THEN
+				DISCH_THEN DISJ_CASES_TAC THENL [
+				  ASM_REWRITE_TAC[] THEN
+				    ASM_SIMP_TAC[];
+				  ALL_TAC
+				] THEN
+				ASM_SIMP_TAC[];
+			      ALL_TAC
+			    ] THEN
+			    GEN_TAC THEN FIRST_X_ASSUM MATCH_MP_TAC THEN
+			      EXISTS_TAC `n + 1` THEN
+			      ARITH_TAC);;
+
+let induct2 = prove(`!P. P 0 /\ P 1 /\ (!n. P n /\ P (n + 1) ==> P (n + 2)) 
+		    ==> (!n. P n)`,
+   GEN_TAC THEN STRIP_TAC THEN
+     SUBGOAL_THEN `!n. P n /\ P (n + 1)` ASSUME_TAC THENL [
+       INDUCT_TAC THENL [
+	 ASM_REWRITE_TAC[ADD];
+	 ALL_TAC
+       ] THEN
+	 REWRITE_TAC[ADD1; ARITH_RULE `(n + 1) + 1 = n + 2`] THEN
+	 ASM_SIMP_TAC[];
+       ALL_TAC
+     ] THEN
+     ASM_SIMP_TAC[]);;
+     
+let fib = define `fib 0 = 0 /\ fib 1 = 1 /\ fib (n + 2) = fib n + fib (n + 1)`;;
+
+let fib_lt_2expn = prove(`!n. fib n < 2 EXP n`,
+   MATCH_MP_TAC induct2 THEN
+     REWRITE_TAC[fib] THEN
+     REPEAT STRIP_TAC THEN TRY ARITH_TAC THEN
+     MATCH_MP_TAC LT_TRANS THEN
+     EXISTS_TAC `2 EXP n + 2 EXP (n + 1)` THEN
+     CONJ_TAC THENL [
+       MATCH_MP_TAC LT_ADD2 THEN
+	 ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     REWRITE_TAC[ARITH_RULE `n + 2 = SUC (n + 1)`] THEN
+     REWRITE_TAC[GSYM ADD1; EXP] THEN
+     MP_TAC (SPEC_ALL lemma1) THEN
+     ARITH_TAC);;
+
+let fib_alt = prove(`!n. fib n = if n = 0 then 0 else if n = 1 then 1 else fib (n - 2) + fib (n - 1)`,
+   GEN_TAC THEN
+     COND_CASES_TAC THENL [
+       ASM_REWRITE_TAC[fib];
+       ALL_TAC
+     ] THEN
+     COND_CASES_TAC THENL [
+       ASM_REWRITE_TAC[fib];
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `fib n = fib ((n - 2) + 2)` (fun th -> REWRITE_TAC[th]) THENL [
+       AP_TERM_TAC THEN ASM_ARITH_TAC;
+       ALL_TAC
+     ] THEN
+    REWRITE_TAC[fib] THEN
+       ASM_SIMP_TAC[ARITH_RULE `~(n = 0) /\ ~(n = 1) ==> (n - 2) + 1 = n - 1`]);;
+
+let fib_small = prove(`fib 0 = 0 /\ fib 1 = 1 /\ fib 2 = 1 /\ fib 3 = 2 /\ fib 4 = 3 /\ fib 5 = 5 /\ fib 6 = 8 /\ fib 7 = 13`,
+     REPEAT (ONCE_REWRITE_TAC[fib_alt] THEN REWRITE_TAC[ARITH; fib]));;
+		      
+
+let fib_ge_n = prove(`!n. 5 <= n ==> n <= fib n`,
+		     MATCH_MP_TAC induct2 THEN
+		       REWRITE_TAC[fib] THEN
+		       REPEAT STRIP_TAC THEN TRY ARITH_TAC THEN
+		       MP_TAC (ARITH_RULE `5 <= n + 2 ==> (n = 3 \/ n = 4 \/ 5 <= n)`) THEN
+		       ASM_REWRITE_TAC[] THEN
+		       REPEAT STRIP_TAC THENL [
+			 ASM_REWRITE_TAC[ARITH; fib_small];
+			 ASM_REWRITE_TAC[ARITH; fib_small];
+			 ALL_TAC
+		       ] THEN
+		       ASM_ARITH_TAC);;
+
+let fib_ge_n = prove(`!n. n <= fib n + 1`,
+		     MATCH_MP_TAC induct2 THEN
+		       REWRITE_TAC[fib] THEN
+		       REPEAT STRIP_TAC THEN TRY ARITH_TAC THEN
+		       MP_TAC (ARITH_RULE `n = 0 \/ n = 1 \/ 2 <= n`) THEN
+		       REPEAT STRIP_TAC THENL [
+			 ASM_REWRITE_TAC[ARITH; fib_small];
+			 ASM_REWRITE_TAC[ARITH; fib_small];
+			 ALL_TAC
+		       ] THEN
+		       ASM_ARITH_TAC);;
+
+
+parse_as_infix ("::", (14, "right"));;
+override_interface ("::", `CONS`);;
+
+let length = define `length [] = 0 /\ length (h :: t) = SUC (length t)`;;
+let cat = define `cat [] s = s /\ cat (h :: t) s = h :: cat t s`;;
+let count = define `count x [] = 0 /\ 
+  count x (h :: t) = (if x = h then 1 else 0) + count x t`;;
+let mem = define `mem x [] = F /\ mem x (h :: t) = if x = h then T else mem x t`;;
+
+let length_cat = prove(`!s1 s2. length (cat s1 s2) = length s1 + length s2`,
+		       LIST_INDUCT_TAC THENL [
+			 REWRITE_TAC[cat; length; ADD];
+			 ALL_TAC
+		       ] THEN
+			 ASM_REWRITE_TAC[cat; length] THEN
+			 ARITH_TAC);;
+
+let cat0 = prove(`!s. cat s [] = s`,
+		 LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[cat]);;
+
+let count_le_length = prove(`!x s. count x s <= length s`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[count; length; LE_REFL] THEN
+     ASM_ARITH_TAC);;
+
+let count_cat = prove(`!x s1 s2. count x (cat s1 s2) = count x s1 + count x s2`,
+  GEN_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[count; cat; ADD] THEN
+    ARITH_TAC);;
+
+let mem_cat = prove(`!x s1 s2. mem x (cat s1 s2) <=> mem x s1 \/ mem x s2`,
+		    GEN_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[mem; cat] THEN
+		      COND_CASES_TAC THEN ASM_REWRITE_TAC[]);;
+
+let mem_count = prove(`!x s. mem x s <=> 0 < count x s`,
+		    GEN_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[mem; count; LT] THEN
+		      COND_CASES_TAC THEN ASM_REWRITE_TAC[] THEN ARITH_TAC);;
+
+let not_mem_count0 = prove(`!x s. ~mem x s <=> count x s = 0`,
+			   REWRITE_TAC[mem_count] THEN ARITH_TAC);;
+
+let count0_eq_nil = prove(`!s. (!x:A. count x s = 0) <=> s = []`,
+			  LIST_INDUCT_TAC THEN REWRITE_TAC[count; NOT_CONS_NIL] THEN
+			    REWRITE_TAC[NOT_FORALL_THM] THEN
+			    EXISTS_TAC `h:A` THEN
+			    ARITH_TAC);;
+   
+
+let perm = new_definition `perm s1 s2 <=> (!x. count x s1 = count x s2)`;;
+
+let perm_comm = prove(`!s1 s2. perm s1 s2 <=> perm s2 s1`,
+		      REWRITE_TAC[perm; EQ_SYM_EQ]);;
+
+let perms0 = prove(`!s. perm s [] <=> s = []`,
+		     REWRITE_TAC[perm; count; count0_eq_nil]);;
+
+let perm0s = prove(`!s. perm [] s <=> s = []`,
+		   ONCE_REWRITE_TAC[perm_comm] THEN REWRITE_TAC[perms0]);;
+
+let sum_list = define `sum_list [] f = 0 /\ sum_list (h :: t) f = f h + sum_list t f`;;
+
+let sum_list_cat = prove(`!s1 s2. sum_list (cat s1 s2) f = sum_list s1 f + sum_list s2 f`,
+			 LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[sum_list; cat; ADD] THEN
+			   ARITH_TAC);;
+
+let length_eq_sum_list = prove(`!s. length s = sum_list s (\x. 1)`,
+			       LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[sum_list; length] THEN
+				 ARITH_TAC);;
+
+let count_eq_sum_list = prove(`!x s. count x s = sum_list s (\y. if x = y then 1 else 0)`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[sum_list; count]);;
+
+let sum_add = prove(`!s f g. sum_list s (\x. f x + g x) = sum_list s f + sum_list s g`,
+   LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[sum_list] THEN ARITH_TAC);;
+		    
+
+let undup = define `undup [] = [] /\ undup (h :: t) = if mem h t then undup t else h :: undup t`;;
+
+let uniq = define `uniq [] = T /\ uniq (h :: t) = if mem h t then F else uniq t`;;
+
+let filter = define `filter a [] = [] /\ 
+  filter a (h :: t) = if a h then h :: filter a t else filter a t`;;
+
+let mem_undup = prove(`!x s. mem x (undup s) <=> mem x s`,
+		      GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[undup; mem] THEN
+			REPEAT COND_CASES_TAC THEN ASM_REWRITE_TAC[mem]);;
+
+let uniq_undup = prove(`!s. uniq (undup s)`,
+		       LIST_INDUCT_TAC THEN REWRITE_TAC[uniq; undup] THEN
+			 COND_CASES_TAC THEN ASM_REWRITE_TAC[mem_undup; uniq]);;
+
+let sum_filter = prove(`!a f s. sum_list (filter a s) f = sum_list s (\x. if a x then f x else 0)`,
+   GEN_TAC THEN GEN_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[filter; sum_list] THEN
+     COND_CASES_TAC THEN ASM_REWRITE_TAC[sum_list; ADD]);;
+
+let sum_sing = prove(`!x f. sum_list [x] f = f x`,
+		     REWRITE_TAC[sum_list; ADD_0]);;
+
+let filter_uniq_pred1 = prove(`!f s a. uniq s ==> filter (\x. x = a) s = if mem a s then [a] else []`,
+			      GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[uniq; filter; mem] THEN
+				COND_CASES_TAC THEN REWRITE_TAC[] THEN REPEAT STRIP_TAC THEN
+				COND_CASES_TAC THEN ASM_SIMP_TAC[] THEN
+				EXPAND_TAC "a" THEN ASM_REWRITE_TAC[]);;
+
+
+
+let sum_undup = prove(`!(f:A->num) s. sum_list s f = sum_list (undup s) (\x. count x s * f x)`,
+  GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[sum_list; undup; count] THEN
+    REWRITE_TAC[ARITH_RULE `(a + b) * c = a * c + b * c`] THEN
+    REWRITE_TAC[sum_add] THEN
+    REWRITE_TAC[COND_RAND] THEN
+    COND_CASES_TAC THENL [
+      REWRITE_TAC[COND_RATOR; MULT; GSYM sum_filter] THEN
+	ASM_SIMP_TAC[filter_uniq_pred1; uniq_undup; mem_undup; sum_sing; MULT_CLAUSES];
+      ALL_TAC
+    ] THEN
+    REWRITE_TAC[COND_RATOR; MULT; GSYM sum_filter; sum_list] THEN
+    ASM_SIMP_TAC[filter_uniq_pred1; uniq_undup; mem_undup; sum_list] THEN
+    SUBGOAL_THEN `count (h:A) t = 0` (fun th -> REWRITE_TAC[th]) THENL [
+      ASM_REWRITE_TAC[GSYM not_mem_count0];
+      ALL_TAC
+    ] THEN
+    ARITH_TAC);;
+
+      
+let perm_length = prove(`!s1 s2. perm s1 s2 ==> length s1 = length s2`,
+  LIST_INDUCT_TAC THENL [
+    SIMP_TAC[perm0s; length];
+    ALL_TAC
+  ] THEN
+    LIST_INDUCT_TAC THENL [
+      REWRITE_TAC[perms0; NOT_CONS_NIL];
+      ALL_TAC
+    ] THEN
+    POP_ASSUM (K ALL_TAC) THEN
+    
+    

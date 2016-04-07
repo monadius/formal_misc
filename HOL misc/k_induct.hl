@@ -1,0 +1,28 @@
+let predA = new_definition `predA k P <=> (!i. i <= k ==> P i) 
+  /\ !n. (!i. i <= k ==> P (n + i)) ==> P (n + k + 1)`;;
+
+let predA_imp_strong = prove(`predA k P ==> (!n. (!m. m < n ==> P m) ==> P n)`,
+   REWRITE_TAC[predA] THEN REPEAT STRIP_TAC THEN REPEAT (POP_ASSUM MP_TAC) THEN
+     MAP_EVERY (fun a -> DISCH_THEN (LABEL_TAC a)) ["h1"; "h2"; "h3"] THEN
+     DISJ_CASES_TAC (ARITH_RULE `n <= k \/ k < n`) THENL [
+       REMOVE_THEN "h1" MATCH_MP_TAC THEN ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `n = (n - k - 1) + k + 1` (fun th -> ONCE_REWRITE_TAC[th]) THENL [
+       POP_ASSUM MP_TAC THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     REMOVE_THEN "h2" MATCH_MP_TAC THEN REPEAT STRIP_TAC THEN
+     FIRST_X_ASSUM MATCH_MP_TAC THEN
+     POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN ARITH_TAC);;
+
+let predA_imp_all = prove(`predA k P ==> (!n. P n)`,
+			  DISCH_THEN (ASSUME_TAC o MATCH_MP predA_imp_strong) THEN
+			    MATCH_MP_TAC num_WF THEN ASM_REWRITE_TAC[]);;
+
+let predA_imp_other = prove(`!P k1 k2. predA k1 P ==> predA k2 P`,
+   REPEAT GEN_TAC THEN DISCH_THEN (ASSUME_TAC o MATCH_MP predA_imp_all) THEN
+     REWRITE_TAC[predA] THEN REPEAT STRIP_TAC THEN ASM_REWRITE_TAC[]);;
+
+let predA_eq = prove(`!P k1 k2. predA k1 P <=> predA k2 P`,
+   REPEAT GEN_TAC THEN EQ_TAC THEN REWRITE_TAC[predA_imp_other]);;

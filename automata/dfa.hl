@@ -1,0 +1,459 @@
+parse_as_infix ("::", (14, "right"));;
+override_interface ("::", `CONS`);;
+make_overloadable "++" `:A -> A -> A`;;
+overload_interface ("++", `APPEND`);;
+parse_as_infix ("++", (13, "right"));;
+
+let dfa_exists0 = prove(`?D. let Q = FST D in
+			     let S = FST (SND D) in
+			     let delta = FST (SND (SND D)) in
+			     let q0 = FST (SND (SND (SND D))) in
+			     let A = SND (SND (SND (SND D))) in
+			       FINITE Q /\ FINITE S /\ A SUBSET Q /\ q0 IN Q
+			       /\ !(q:B) (s:A). q IN Q /\ s IN S ==> delta q s IN Q`,
+			  EXISTS_TAC `{q0:B}, {}:A->bool, delta:B->A->B, q0:B, {q0}` THEN
+			   ASM_REWRITE_TAC[] THEN REPEAT LET_TAC THEN
+			   POP_ASSUM (fun th -> REWRITE_TAC[th]) THEN
+			   MAP_EVERY EXPAND_TAC ["A"; "S"] THEN
+			   REWRITE_TAC[SUBSET_REFL; FINITE_SING; FINITE_EMPTY] THEN
+			   REWRITE_TAC[IN_SING; NOT_IN_EMPTY]);;
+
+let dfa_type = new_type_definition "dfa" ("mk_dfa", "dest_dfa") dfa_exists0;;			   
+let dfaQ = new_definition `dfaQ D = FST (dest_dfa D)`;; 
+let dfaS = new_definition `dfaS D = FST (SND (dest_dfa D))`;;
+let dfaD = new_definition `dfaD D = FST (SND (SND (dest_dfa D)))`;;
+let dfaQ0 = new_definition `dfaQ0 D = FST (SND (SND (SND (dest_dfa D))))`;;
+let dfaA = new_definition `dfaA D = SND (SND (SND (SND (dest_dfa D))))`;;
+
+let LET_RULE = CONV_RULE (DEPTH_CONV let_CONV);;
+let DFA_TAC list = REWRITE_TAC[dfaQ; dfaS; dfaD; dfaQ0; dfaA] THEN 
+  MESON_TAC ((LET_RULE dfa_type) :: list);;
+
+let dfaQ0_in_Q = prove(`!d. dfaQ0 d IN dfaQ d`, DFA_TAC[]);;
+let dfaAsubQ = prove(`!d. dfaA d SUBSET dfaQ d`, DFA_TAC[]);;
+let finite_dfaQ = prove(`!d. FINITE (dfaQ d)`, DFA_TAC[]);;
+let finite_dfaS = prove(`!d. FINITE (dfaS d)`, DFA_TAC[]);;
+let finite_dfaA = prove(`!d. FINITE (dfaA d)`, DFA_TAC[FINITE_SUBSET]);;
+let dfaD_in_Q = prove(`!d. !q s. q IN dfaQ d /\ s IN dfaS d ==>
+			(dfaD d) q s IN dfaQ d`, DFA_TAC[]);;
+
+let word = new_definition `word S w <=> ALL (\x. x IN S) w`;;
+
+let states = define `states (d:(A,B)dfa) q [] = [q] /\ 
+  states d q (w::ws) = q :: states d (dfaD d q w) ws`;;
+
+let accepts = new_definition `!d w. accepts (d:(A,B)dfa) w <=> word (dfaS d) w
+  /\ LAST (states d (dfaQ0 d) w) IN (dfaA d)`;;
+
+(* ?d:(A,B)dfa. is not accepted since the type :B is not in the rhs *)
+let regular = new_definition `regular L <=> ?d:(A,num)dfa. L = accepts d`;;
+
+let list_pow = define `list_pow s 0 = [] /\ list_pow s (SUC n) = (s ++ list_pow s n)`;;
+
+let list_pow1 = prove(`!s. list_pow s 1 = s`, REWRITE_TAC[ONE; list_pow; APPEND_NIL]);;
+let list_pow2 = prove(`!s. list_pow s 2 = s ++ s`, REWRITE_TAC[TWO; list_pow; list_pow1]);;
+
+let list_pow_empty = prove(`!n. list_pow [] n = []`,
+   INDUCT_TAC THEN ASM_REWRITE_TAC[list_pow; APPEND]);;
+
+let list_pow_empty_eq = prove(`!n s. list_pow s n = [] <=> n = 0 \/ s = []`,
+   INDUCT_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[list_pow; APPEND; list_pow_empty; NOT_CONS_NIL; NOT_SUC]);;
+
+let length_list_pow = prove(`!n (s:(A)list). LENGTH (list_pow s n) = n * LENGTH s`,
+   INDUCT_TAC THEN LIST_INDUCT_TAC THEN 
+     ASM_REWRITE_TAC[list_pow; LENGTH; APPEND; list_pow_empty; LENGTH_APPEND] THEN
+     ARITH_TAC);;
+
+let hd_list_pow = prove(`!n (s:(A)list). 0 < n ==> HD (list_pow s n) = HD s`,
+   INDUCT_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[list_pow; list_pow_empty; APPEND; HD; LT]);;
+
+let mem_split = prove(`!(x:A) s. MEM x s ==> ?s1 s2. s = s1 ++ [x] ++ s2 /\ ~(MEM x s1)`,
+		      GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[MEM] THEN
+			ASM_CASES_TAC `x = h:A` THEN ASM_REWRITE_TAC[] THENL [
+			  MAP_EVERY EXISTS_TAC [`[]:(A)list`; `t:(A)list`] THEN
+			    ASM_REWRITE_TAC[APPEND; MEM];
+			  ALL_TAC
+			] THEN
+			DISCH_THEN (fun th -> FIRST_X_ASSUM (MP_TAC o C MATCH_MP th)) THEN
+			STRIP_TAC THEN
+			MAP_EVERY EXISTS_TAC [`(h:A) :: s1`; `s2:(A)list`] THEN
+			ASM_REWRITE_TAC[APPEND; MEM]);;
+
+let has_size_1 = prove(`!S. S HAS_SIZE 1 <=> ?a:A. S = {a}`,
+		       REWRITE_TAC[ONE; HAS_SIZE_CLAUSES] THEN GEN_TAC THEN
+			 EQ_TAC THEN REPEAT STRIP_TAC THENL [
+			   EXISTS_TAC `a:A` THEN ASM_REWRITE_TAC[];
+			   EXISTS_TAC `a:A` THEN EXISTS_TAC `{}:A->bool` THEN
+			     ASM_REWRITE_TAC[NOT_IN_EMPTY]
+			 ]);;
+			 
+let word_empty = prove(`!S:A->bool. word S []`, REWRITE_TAC[word; ALL]);;
+
+let word_over_empty = prove(`!s:(A)list. word {} s <=> s = []`,
+			    REWRITE_TAC[word; NOT_IN_EMPTY] THEN
+			      LIST_INDUCT_TAC THEN REWRITE_TAC[ALL; NOT_CONS_NIL]);;
+
+let word_over_sing = prove(`!(a:A) s. word {a} s <=> !x. MEM x s ==> x = a`,
+			   REWRITE_TAC[word; IN_SING; ALL_MEM]);;
+
+let words_cat = prove(`!(S:A->bool) x y. word S (x ++ y) <=> word S x /\ word S y`,
+   REWRITE_TAC[word; ALL_APPEND]);;
+
+let word_list_pow = prove(`!S w i. word S w ==> word S (list_pow w i)`,
+   GEN_TAC THEN GEN_TAC THEN INDUCT_TAC THEN REWRITE_TAC[list_pow; word_empty] THEN
+     ASM_SIMP_TAC[words_cat]);;
+
+let take = define `take 0 s = [] /\
+  take (SUC n) (h :: t) = h :: take n t /\
+  take n [] = []`;;
+
+let drop = define `drop 0 s = s /\
+  drop (SUC n) (h :: t) = drop n t /\
+  drop n [] = []`;;
+
+let uniq = define `uniq [] = T /\ uniq (h :: t) = (~(MEM h t) /\ uniq t)`;;
+
+let take_eq = prove(`!n s. LENGTH s <= n ==> take n s = s`,
+   INDUCT_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[LENGTH; take] THEN TRY ARITH_TAC THEN
+     REWRITE_TAC[LE_SUC] THEN
+     DISCH_THEN (fun th -> FIRST_X_ASSUM (MP_TAC o C MATCH_MP th)) THEN
+     SIMP_TAC[]);;
+
+let length_take = prove(`!n s. LENGTH (take n s) = if n <= LENGTH s then n else LENGTH s`,
+   INDUCT_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[LENGTH; take] THEN ARITH_TAC);;
+
+let length_drop = prove(`!n s. LENGTH (drop n s) = if n <= LENGTH s then LENGTH s - n else 0`,
+   INDUCT_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[LENGTH; drop] THEN ARITH_TAC);;
+
+let cat_take_drop = prove(`!n (s:(A)list). take n s ++ drop n s = s`,
+   INDUCT_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[take; drop; APPEND]);;
+
+let take_cat = prove(`!n s1 s2:(A)list. take n (s1 ++ s2) = 
+    if n <= LENGTH s1 then take n s1 else s1 ++ take (n - LENGTH s1) s2`,
+   INDUCT_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[take; LENGTH; APPEND] THEN TRY ARITH_TAC THENL [
+     GEN_TAC THEN COND_CASES_TAC THEN POP_ASSUM MP_TAC THEN TRY ARITH_TAC THEN REWRITE_TAC[SUB_0];
+     ALL_TAC
+   ] THEN
+   GEN_TAC THEN ASM_REWRITE_TAC[LE_SUC] THEN
+     COND_CASES_TAC THEN ASM_REWRITE_TAC[SUB_SUC]);;
+
+let drop_cat = prove(`!n s1 s2:(A)list. drop n (s1 ++ s2) = 
+    if LENGTH s1 <= n then drop (n - LENGTH s1) s2 else drop n s1 ++ s2`,
+      INDUCT_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[drop; LENGTH; APPEND; LE_REFL; SUB_0] THEN TRY ARITH_TAC THEN
+     GEN_TAC THEN ASM_REWRITE_TAC[LE_SUC] THEN
+      COND_CASES_TAC THEN REWRITE_TAC[SUB_SUC]);;
+
+let drop_eq_nil = prove(`!n s:(A)list. drop n s = [] <=> LENGTH s <= n`,
+   INDUCT_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[drop; LENGTH; LE_REFL; NOT_CONS_NIL] THEN 
+     ARITH_TAC);;
+
+let not_uniq_split = prove(`!s:(A)list. ~uniq s ==>
+			     ?x s1 s2. s = s1 ++ s2 /\ MEM x s1 /\ MEM x s2`,
+  LIST_INDUCT_TAC THEN REWRITE_TAC[uniq; DE_MORGAN_THM] THEN
+    STRIP_TAC THENL [
+      MAP_EVERY EXISTS_TAC [`h:A`; `[h:A]`; `t:(A)list`] THEN
+	ASM_REWRITE_TAC[APPEND; MEM];
+      ALL_TAC
+    ] THEN
+    POP_ASSUM (fun th -> FIRST_X_ASSUM (MP_TAC o C MATCH_MP th)) THEN
+    STRIP_TAC THEN
+    MAP_EVERY EXISTS_TAC [`x:A`; `h:A :: s1`; `s2:(A)list`] THEN
+    ASM_REWRITE_TAC[APPEND; MEM]);;
+
+let card_uniq_eq = prove(`!s:(A)list. uniq s ==> CARD (set_of_list s) = LENGTH s`,
+   LIST_INDUCT_TAC THEN REWRITE_TAC[uniq; set_of_list; LENGTH; CARD_CLAUSES] THEN
+     SIMP_TAC[CARD_CLAUSES; FINITE_SET_OF_LIST] THEN STRIP_TAC THEN
+     ASM_SIMP_TAC[IN_SET_OF_LIST]);;
+
+let word_over_itself = prove(`!s:(A)list. word (set_of_list s) s`,
+			     REWRITE_TAC[word; GSYM ALL_MEM; IN_SET_OF_LIST]);;
+
+let word_subset = prove(`!S (s:(A)list). word S s <=> set_of_list s SUBSET S`,
+			REWRITE_TAC[word; GSYM ALL_MEM; SUBSET; IN_SET_OF_LIST]);;
+
+let word_not_uniq = prove(`!S n (s:(A)list). S HAS_SIZE n /\ word S s /\ n < LENGTH s
+			    ==> ~uniq s`,
+   REWRITE_TAC[HAS_SIZE] THEN REPEAT STRIP_TAC THEN
+     UNDISCH_TAC `n < LENGTH (s:(A)list)` THEN REWRITE_TAC[NOT_LT] THEN
+     UNDISCH_TAC `word S (s:(A)list)` THEN
+     REWRITE_TAC[word_subset] THEN DISCH_TAC THEN
+     ASM_SIMP_TAC[GSYM card_uniq_eq] THEN
+     EXPAND_TAC "n" THEN
+     MATCH_MP_TAC CARD_SUBSET THEN ASM_REWRITE_TAC[]);;
+
+let seq_pigeon_mem = prove(`!(S:A->bool) n s. S HAS_SIZE n /\ word S s /\ n < LENGTH s
+			     ==> ?x s1 s2. s = s1 ++ [x] ++ s2
+				 /\ MEM x s1 /\ LENGTH s1 <= n`,
+   REPEAT STRIP_TAC THEN
+     ABBREV_TAC `w = take (n + 1) (s:(A)list)` THEN
+     SUBGOAL_THEN `?t:(A)list. s = w ++ t` STRIP_ASSUME_TAC THENL [
+       EXISTS_TAC `drop (n + 1) s:(A)list` THEN
+	 EXPAND_TAC "w" THEN REWRITE_TAC[cat_take_drop];
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `LENGTH (w:(A)list) = n + 1` ASSUME_TAC THENL [
+       EXPAND_TAC "w" THEN REWRITE_TAC[length_take] THEN
+	 UNDISCH_TAC `n < LENGTH (s:(A)list)` THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `?x w1 w2:(A)list. w = w1 ++ w2 /\ MEM x w1 /\ MEM x w2` STRIP_ASSUME_TAC THENL [
+       MATCH_MP_TAC not_uniq_split THEN
+	 MATCH_MP_TAC word_not_uniq THEN
+	 MAP_EVERY EXISTS_TAC [`S:A->bool`; `n:num`] THEN
+	 UNDISCH_TAC `word S (s:(A)list)` THEN
+	 ASM_SIMP_TAC[words_cat] THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     POP_ASSUM (STRIP_ASSUME_TAC o MATCH_MP mem_split) THEN
+     MAP_EVERY EXISTS_TAC [`x:A`; `w1 ++ s1:(A)list`; `s2 ++ t:(A)list`] THEN
+     ASM_REWRITE_TAC[MEM_APPEND; APPEND_ASSOC] THEN
+     UNDISCH_TAC `LENGTH (w:(A)list) = n + 1` THEN
+     ASM_REWRITE_TAC[LENGTH_APPEND; LENGTH] THEN
+     ARITH_TAC);;
+
+let seq_pigeon_split = prove(`!(S:A->bool) n s. S HAS_SIZE n /\ word S s /\ n < LENGTH s
+			     ==> ?x s1 s2 s3. s = (s1 ++ [x] ++ s2 ++ [x] ++ s3)
+				 /\ LENGTH (s1 ++ [x] ++ s2 ++ [x]) <= n + 1`,
+   REPEAT GEN_TAC THEN
+     DISCH_THEN (STRIP_ASSUME_TAC o MATCH_MP seq_pigeon_mem) THEN
+     UNDISCH_TAC `MEM (x:A) s1` THEN DISCH_THEN (MP_TAC o MATCH_MP mem_split) THEN
+     REPEAT STRIP_TAC THEN
+     MAP_EVERY EXISTS_TAC [`x:A`; `s1':(A)list`; `s2':(A)list`; `s2:(A)list`] THEN
+     UNDISCH_TAC `LENGTH (s1:(A)list) <= n` THEN
+     ASM_REWRITE_TAC[APPEND_ASSOC; LENGTH_APPEND; LENGTH] THEN
+     ARITH_TAC);;
+
+(* states *)
+
+let word_states = prove(`!(d:(A,B)dfa) w q. word (dfaS d) w /\ q IN dfaQ d
+			  ==> word (dfaQ d) (states d q w)`,
+   REWRITE_TAC[word] THEN GEN_TAC THEN
+     LIST_INDUCT_TAC THEN REWRITE_TAC[states; ALL] THEN
+     REPEAT STRIP_TAC THEN ASM_REWRITE_TAC[] THEN
+     FIRST_X_ASSUM MATCH_MP_TAC THEN
+     ASM_SIMP_TAC[dfaD_in_Q]);;
+
+let length_states = prove(`!(d:(A,B)dfa) w q. LENGTH (states d q w) = LENGTH w + 1`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[LENGTH; states] THEN ARITH_TAC);;
+
+let states_not_nil = prove(`!(d:(A,B)dfa) w q. ~(states d q w = [])`,
+			   REWRITE_TAC[GSYM LENGTH_EQ_NIL; length_states] THEN ARITH_TAC);;
+
+let states_sing = prove(`!(d:(A,B)dfa) w q. LENGTH (states d q w) = 1 <=> w = []`,
+   REWRITE_TAC[length_states; GSYM LENGTH_EQ_NIL] THEN ARITH_TAC);;
+
+let states_concat = prove(`!(d:(A,B)dfa) w1 w2 q. let s1 = states d q w1 in
+			       states d q (w1 ++ w2) = (BUTLAST s1 ++ states d (LAST s1) w2)`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[states; APPEND] THENL [
+     REPEAT STRIP_TAC THEN LET_TAC THEN EXPAND_TAC "s1" THEN
+       REWRITE_TAC[BUTLAST; LAST; APPEND];
+     ALL_TAC
+   ] THEN
+     REPEAT GEN_TAC THEN LET_TAC THEN
+     FIRST_X_ASSUM (MP_TAC o LET_RULE o SPECL[`w2:(A)list`; `dfaD d (q:B) (h:A)`]) THEN
+     POP_ASSUM (fun th -> REWRITE_TAC[GSYM th]) THEN
+     DISCH_THEN (fun th -> REWRITE_TAC[th]) THEN
+     REWRITE_TAC[BUTLAST; LAST; states_not_nil; APPEND]);;
+
+
+let last_states_concat = prove(`!(d:(A,B)dfa) w1 w2 q. let s1 = states d q w1 in
+		    LAST (states d q (w1 ++ w2)) = LAST (states d (LAST s1) w2)`,
+   REPEAT GEN_TAC THEN LET_TAC THEN EXPAND_TAC "s1" THEN
+     REWRITE_TAC[LET_RULE states_concat; LAST_APPEND; states_not_nil]);;
+
+let states_loop = prove(`!(d:(A,B)dfa) w i q. LAST (states d q w) = q
+    ==> LAST (states d q (list_pow w i)) = q`,
+   GEN_TAC THEN GEN_TAC THEN INDUCT_TAC THEN REWRITE_TAC[list_pow; states; LAST] THEN
+     REPEAT STRIP_TAC THEN
+     REWRITE_TAC[LET_RULE last_states_concat] THEN
+     FIRST_ASSUM (fun th -> REWRITE_TAC[th]) THEN
+     FIRST_X_ASSUM MATCH_MP_TAC THEN ASM_REWRITE_TAC[]);;
+
+let hd_states = prove(`!d q w. HD (states d q w) = q`,
+   GEN_TAC THEN GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[states; HD]);;
+
+let states_split = prove(`!(d:(A,B)dfa) s1 w q s2 x. states d q w = (s1 ++ [x] ++ s2)
+    ==> ?w1 w2. w = (w1 ++ w2) /\
+	states d q w1 = (s1 ++ [x])
+	/\ states d x w2 = ([x] ++ s2)`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[states; APPEND; injectivity "list"] THEN REPEAT STRIP_TAC THENL [
+     (* 1 *)
+     MAP_EVERY EXISTS_TAC [`[]:(A)list`; `[]:(A)list`] THEN
+       REWRITE_TAC[APPEND; states] THEN ASM_REWRITE_TAC[];
+     (* 2 *)
+     MAP_EVERY EXISTS_TAC [`[]:(A)list`; `(h:A) :: t`] THEN
+       REWRITE_TAC[APPEND; states] THEN ASM_REWRITE_TAC[] THEN
+       POP_ASSUM (fun th -> ASM_REWRITE_TAC[GSYM th]);
+     (* 3 *)
+     POP_ASSUM (MP_TAC o AP_TERM `LENGTH:(B)list->num`) THEN
+       REWRITE_TAC[LENGTH; LENGTH_APPEND] THEN
+       ARITH_TAC;
+     (* 4 *)
+     POP_ASSUM (LABEL_TAC "a") THEN
+       FIRST_X_ASSUM (MP_TAC o SPEC `t':(A)list`) THEN
+       REWRITE_TAC[APPEND] THEN DISCH_TAC THEN
+       REMOVE_THEN "a" (fun th -> FIRST_X_ASSUM (MP_TAC o C MATCH_MP th)) THEN
+       STRIP_TAC THEN
+       MAP_EVERY EXISTS_TAC [`(h':A) :: w1`; `w2:(A)list`] THEN
+       ASM_REWRITE_TAC[APPEND; states]
+   ]);;
+     
+     
+let mem_last = prove(`!s. ~(s = []) ==> MEM (LAST s) s`,
+   LIST_INDUCT_TAC THEN REWRITE_TAC[LAST; MEM; NOT_CONS_NIL] THEN
+     COND_CASES_TAC THEN ASM_SIMP_TAC[]);;
+
+let mem_last_states = prove(`!d q w. MEM (LAST (states d q w)) (states d q w)`,
+   REPEAT GEN_TAC THEN MATCH_MP_TAC mem_last THEN
+     REWRITE_TAC[GSYM LENGTH_EQ_NIL; length_states] THEN
+     ARITH_TAC);;
+
+let mem_states_in_q = prove(`!(d:(A,B)dfa) q w x. word (dfaS d) w /\ q IN (dfaQ d)
+			       /\ MEM x (states d q w)
+			       ==> x IN (dfaQ d)`,
+   REPEAT STRIP_TAC THEN
+     MP_TAC (SPECL[`d:(A,B)dfa`; `w:(A)list`; `q:B`] word_states) THEN
+     ASM_SIMP_TAC[word; GSYM ALL_MEM]);;
+
+let last_rcons = prove(`!s x. LAST (s ++ [x]) = x`,
+   REWRITE_TAC[LAST_APPEND; LAST; NOT_CONS_NIL]);;
+
+let butlast_rcons = prove(`!s x. BUTLAST (s ++ [x:A]) = s`,
+   LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[BUTLAST; APPEND] THEN
+     GEN_TAC THEN COND_CASES_TAC THEN REWRITE_TAC[] THEN
+     POP_ASSUM MP_TAC THEN SPEC_TAC (`t:(A)list`, `t:(A)list`) THEN
+     LIST_INDUCT_TAC THEN REWRITE_TAC[APPEND; NOT_CONS_NIL]);;
+
+(* pumping lemma *)
+
+let pumping_lemma = prove(`!L:(A)list->bool. regular L ==> 
+			    ?n. !x y z. (x ++ y ++ z) IN L /\ LENGTH y >= n
+			    ==> ?u v w. y = (u ++ v ++ w)
+				/\ LENGTH (u ++ v) <= n
+				/\ ~(v = [])
+				/\ !i. (x ++ u ++ list_pow v i ++ w ++ z) IN L`,
+   REWRITE_TAC[regular] THEN REPEAT STRIP_TAC THEN
+     ABBREV_TAC `n = CARD (dfaQ (d:(A,num)dfa))` THEN
+     EXISTS_TAC `n:num` THEN
+     REPEAT STRIP_TAC THEN
+     ABBREV_TAC `q = LAST (states (d:(A,num)dfa) (dfaQ0 d) x)` THEN
+     ABBREV_TAC `s = states (d:(A,num)dfa) q y` THEN
+     MP_TAC (ISPECL[`dfaQ (d:(A,num)dfa)`; `n:num`; `s:(num)list`] seq_pigeon_split) THEN
+     ANTS_TAC THENL [
+       ASM_REWRITE_TAC[HAS_SIZE; finite_dfaQ] THEN
+	 EXPAND_TAC "s" THEN REWRITE_TAC[length_states] THEN CONJ_TAC THENL [
+	   UNDISCH_TAC `(x ++ y ++ z):(A)list IN L` THEN REWRITE_TAC[IN] THEN
+	     ASM_REWRITE_TAC[accepts; words_cat] THEN
+	     STRIP_TAC THEN EXPAND_TAC "s" THEN
+	     MATCH_MP_TAC word_states THEN
+	     ASM_REWRITE_TAC[] THEN
+	     MATCH_MP_TAC mem_states_in_q THEN
+	     MAP_EVERY EXISTS_TAC [`dfaQ0 (d:(A,num)dfa)`; `x:(A)list`] THEN
+	     ASM_REWRITE_TAC[dfaQ0_in_Q] THEN
+	     EXPAND_TAC "q" THEN
+	     REWRITE_TAC[mem_last_states];
+	   ALL_TAC
+	 ] THEN
+	 UNDISCH_TAC `LENGTH (y:(A)list) >= n` THEN
+	 ARITH_TAC;
+       ALL_TAC
+     ] THEN
+
+     STRIP_TAC THEN
+     UNDISCH_TAC `states (d:(A,num)dfa) q y = s` THEN
+     ASM_REWRITE_TAC[] THEN
+     DISCH_THEN (MP_TAC o MATCH_MP states_split) THEN
+     DISCH_THEN (X_CHOOSE_TAC `u:(A)list`) THEN POP_ASSUM STRIP_ASSUME_TAC THEN
+     POP_ASSUM MP_TAC THEN
+     ONCE_REWRITE_TAC[APPEND_ASSOC] THEN
+     DISCH_THEN (MP_TAC o MATCH_MP states_split) THEN
+     DISCH_THEN (X_CHOOSE_TAC `v:(A)list`) THEN
+     POP_ASSUM (X_CHOOSE_TAC `w:(A)list`) THEN
+     
+     MAP_EVERY EXISTS_TAC [`u:(A)list`; `v:(A)list`; `w:(A)list`] THEN
+     ASM_REWRITE_TAC[GSYM APPEND_ASSOC] THEN
+     REPEAT CONJ_TAC THENL [
+       SUBGOAL_THEN `states (d:(A,num)dfa) q (u ++ v) = s1 ++ [x'] ++ s2 ++ [x']` MP_TAC THENL [
+	 ASM_REWRITE_TAC[LET_RULE states_concat; butlast_rcons; last_rcons; APPEND_ASSOC];
+	 ALL_TAC
+       ] THEN
+	 DISCH_THEN (MP_TAC o AP_TERM `LENGTH:(num)list->num`) THEN
+	 REWRITE_TAC[length_states] THEN
+	 UNDISCH_TAC `LENGTH (s1 ++ [x':num] ++ s2 ++ [x']) <= n + 1` THEN
+	 ARITH_TAC;
+       POP_ASSUM STRIP_ASSUME_TAC THEN POP_ASSUM (fun th -> ALL_TAC) THEN
+	 POP_ASSUM (LABEL_TAC "a") THEN DISCH_TAC THEN REMOVE_THEN "a" MP_TAC THEN
+	 ASM_REWRITE_TAC[states; APPEND; injectivity "list"] THEN
+	 DISCH_THEN (MP_TAC o AP_TERM `LENGTH:(num)list->num`) THEN
+	 REWRITE_TAC[LENGTH; LENGTH_APPEND] THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     UNDISCH_TAC `(x ++ y ++ z):(A)list IN L` THEN REWRITE_TAC[IN] THEN
+     ASM_REWRITE_TAC[accepts; words_cat; LET_RULE last_states_concat; last_rcons] THEN
+     STRIP_TAC THEN GEN_TAC THEN
+     ASM_REWRITE_TAC[] THEN CONJ_TAC THENL [
+       MATCH_MP_TAC word_list_pow THEN ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `LAST (states (d:(A,num)dfa) x' (list_pow v i)) = x'` MP_TAC THENL [
+       MATCH_MP_TAC states_loop THEN ASM_REWRITE_TAC[last_rcons];
+       ALL_TAC
+     ] THEN
+     DISCH_THEN (fun th -> ASM_REWRITE_TAC[th]));;
+
+
+(* Non-regular examples *)
+
+let an_bn_not_regular = prove(`~regular {list_pow [0] k ++ list_pow [1] k | T}`,
+   DISCH_THEN (MP_TAC o MATCH_MP pumping_lemma) THEN
+     REWRITE_TAC[NOT_EXISTS_THM; NOT_FORALL_THM; NOT_IMP; DE_MORGAN_THM] THEN
+     REWRITE_TAC[TAUT `~A \/ ~B \/ C \/ D <=> A /\ B /\ ~C ==> D`] THEN
+     REWRITE_TAC[IN_ELIM_THM; NOT_EXISTS_THM] THEN GEN_TAC THEN
+     MAP_EVERY EXISTS_TAC [`[]:(num)list`; `list_pow [0] n`; `list_pow [1] n`] THEN
+     REPEAT STRIP_TAC THENL [
+       EXISTS_TAC `n:num` THEN REWRITE_TAC[APPEND];
+       REWRITE_TAC[length_list_pow; LENGTH] THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     EXISTS_TAC `0` THEN GEN_TAC THEN
+     REWRITE_TAC[list_pow; APPEND] THEN
+     ABBREV_TAC `m = LENGTH (u ++ w:(num)list)` THEN
+     SUBGOAL_THEN `m < n` ASSUME_TAC THENL [
+       UNDISCH_TAC `list_pow [0] n = u ++ v ++ w` THEN
+	 DISCH_THEN (MP_TAC o AP_TERM `LENGTH:(num)list->num`) THEN
+	 EXPAND_TAC "m" THEN
+	 REWRITE_TAC[length_list_pow; LENGTH; GSYM ONE; MULT_CLAUSES; LENGTH_APPEND] THEN
+	 UNDISCH_TAC `~(v = []:(num)list)` THEN
+	 REWRITE_TAC[GSYM LENGTH_EQ_NIL] THEN
+	 ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     DISJ_CASES_TAC (ARITH_RULE `k <= m \/ m < k`) THENL [
+       DISCH_THEN (MP_TAC o AP_TERM `LENGTH:(num)list->num`) THEN
+	 REWRITE_TAC[APPEND_ASSOC] THEN ONCE_REWRITE_TAC[LENGTH_APPEND] THEN
+	 ASM_REWRITE_TAC[length_list_pow; LENGTH] THEN
+	 POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN
+	 ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     DISCH_THEN (MP_TAC o AP_TERM `HD o drop m:(num)list->(num)list`) THEN
+     REWRITE_TAC[APPEND_ASSOC; o_THM] THEN
+     ONCE_REWRITE_TAC[drop_cat] THEN ASM_REWRITE_TAC[LE_REFL; SUB_REFL; drop] THEN
+     REWRITE_TAC[length_list_pow; LENGTH; GSYM ONE; MULT_CLAUSES] THEN
+     ASM_SIMP_TAC[ARITH_RULE `m < k ==> ~(k <= m)`] THEN
+     SUBGOAL_THEN `!m k. m < k ==> HD (drop m (list_pow [0] k)) = 0` ASSUME_TAC THENL [
+       INDUCT_TAC THEN INDUCT_TAC THEN SIMP_TAC[drop; hd_list_pow; HD; list_pow; LT] THEN SIMP_TAC[NOT_CONS_NIL; HD_APPEND; HD; APPEND] THEN
+	 ASM_SIMP_TAC[GSYM LT; LT_SUC; drop];
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `~(drop m (list_pow [0] k) = [])` ASSUME_TAC THENL [
+       ASM_REWRITE_TAC[drop_eq_nil; length_list_pow; LENGTH; GSYM ONE; MULT_CLAUSES; NOT_LE];
+       ALL_TAC
+     ] THEN
+     SUBGOAL_THEN `0 < n` ASSUME_TAC THENL [
+       UNDISCH_TAC `m < n` THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     ASM_SIMP_TAC[HD_APPEND; hd_list_pow; HD] THEN
+     ARITH_TAC);;
+     

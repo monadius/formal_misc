@@ -1,0 +1,15 @@
+let th = ARITH_RULE `1 + 1 = 2`;;
+
+let tm = `a = 2 + 3`;;
+
+let a_th = ASSUME tm;;
+let eq_th = DEDUCT_ANTISYM_RULE a_th th;;
+let r_th = EQ_MP eq_th a_th;;
+
+let add_hyp tm th =
+  let h_th = ASSUME tm in
+  let eq_th = DEDUCT_ANTISYM_RULE h_th th in
+    EQ_MP eq_th h_th;;
+
+itlist add_hyp [`1 = 2`; `1 = 3`] th;;
+

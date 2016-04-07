@@ -1,0 +1,155 @@
+(***********************************************)
+(*        Part 1: Induction                    *)
+(***********************************************)
+
+(* 1. Prove the following inequality: *)
+let hw_ineq1 = prove
+  (`!a. ~(a = 0) ==> (!n. 1 <= a EXP n)`,
+   ???
+  );;
+(* Hints: The proof can be started with (GEN_TAC THEN DISCH_TAC).
+   The first tactic (GEN_TAC) deals with the first universal quantifier,
+   and the second tactic (DISCH_TAC) moves the antecedent ~(a = 0) into
+   the list of assumptions. *)
+(* At some point of the proof, you'll get the following inequality: 1 <= a * b.
+   This inequality can be proved by proving two inequalities 1 <= a /\ 1 <= b.
+   Apply (MATCH_MP_TAC) the theorem LE_MULT2 in order to get these two inequalities.
+   Before you can apply this theorem, you need to transform the goal into
+   the following form: 1 * 1 <= a * b.
+   Rewrite with the theorem `1 = 1 * 1` which can be directly proved with ARITH_RULE.
+   Use ONCE_REWRITE_TAC[] instead of REWRITE_TAC[] to get the result. *)
+
+
+(* 2. Prove the following inequality: *)
+let hw_ineq2 = prove
+  (`!n. 2 * n <= 2 EXP n`,
+   ???
+  );;
+(* Hints: You need to consider two cases in the induction step. The first case is
+   n = 0 and the second case is ~(n = 0). One of the easiest ways to consider mutually
+   exclusive cases in HOL Light is to use ASM_CASES_TAC.
+   This tactic takes one argument: a term tm. Then it yields two subgoals:
+   one subgoal with tm in the assumption list and another subgoal with ~tm in
+   the assumption list (example: ASM_CASES_TAC `n = 0`). *)
+
+
+(* 3. (No discussion) Prove the following equality: *)
+let exp_add = prove
+  (`!a n m. a EXP (n + m) = a EXP n * a EXP m`,
+   ???
+  );;
+(* This result is already proved in HOL Light. The corresponding theorem is called
+   EXP_ADD. This theorem cannot be used in your proof. *)
+(* Hints: You need the following identity: `SUC n + m = SUC (n + m)`. You can directly
+   prove it with ARITH_RULE or rewrite with the theorem ADD *)
+
+
+(* 2-induction proof from the lecture *)
+let induct2 = prove
+  (`!P. (P 0 /\ P 1 /\ 
+	   (!n. P n /\ P (n + 1) ==> P (n + 2)))
+   ==> !n. P n`,
+  GEN_TAC THEN
+    STRIP_TAC THEN
+    SUBGOAL_THEN `!n. P n /\ P (n + 1)` ASSUME_TAC THENL [
+      INDUCT_TAC THENL [
+	ASM_REWRITE_TAC[ADD];
+	ASM_REWRITE_TAC[ADD1] THEN
+	  REWRITE_TAC[ARITH_RULE `(n + 1) + 1 = n + 2`] THEN
+	  ASM_SIMP_TAC[]
+      ];
+      ASM_REWRITE_TAC[]
+    ]);;
+
+(* The definition of Fibonacci numbers from the lecture *)
+let fib = define `fib 0 = 0 /\ fib 1 = 1 /\ 
+  fib (n + 2) = fib n + fib (n + 1)`;;
+
+(* 4. Prove the following identity: *)
+let fib2 = prove
+  (`fib 2 = 1`,
+   ???
+  );;
+(* Hints: This exercise demonstrates that even obvious results can be not completely
+   trivial in HOL Light. In order to prove this result, you need to transform
+   the left hand side of the equality to the form which can be rewritten with
+   the definition of fib. Use ARITH_RULE to prove the identity `2 = 0 + 2` and
+   use ONCE_REWRITE_TAC[] to transform the left hand side of the goal. *)
+
+(* 5. Prove the following inequality: *)
+let fib_ge_n = prove
+  (`!n. n <= fib n + 1`,
+   ???
+  );;
+(* Hints: Several cases should be considered in the induction step.
+   Find a number x, such that the proof can be done automatically with ASM_ARITH_TAC 
+   when x <= n. Consider all other cases as well. 
+   Previously proved result fib2 is useful. *)
+
+
+(***********************************************)
+(*        Part 2: Induction on Lists           *)
+(***********************************************)
+
+(* The definition from the lecture *)
+let cat = define `cat [] s = s /\ cat (CONS h t) s = CONS h (cat t s)`;;
+
+(* Define a membership predicate which indicates whether a given element x
+   belongs to a list or not *)
+let mem = define `mem x [] = F /\ mem x (CONS h t) = if x = h then T else mem x t`;;
+
+(* Define an operation which removes duplicates from a given list *)
+let undup = define `undup [] = [] /\ 
+  undup (CONS h t) = if mem h t then undup t else CONS h (undup t)`;;
+
+(* Example: *)
+REWRITE_CONV[undup; mem; ARITH] `undup [4;1;2;1;1;3;2]`;;
+
+(* Define a predicate which is true if and only if a give list contains no duplicates *)
+let uniq = define `uniq [] = T /\
+  uniq (CONS h t) = if mem h t then F else uniq t`;;
+
+(* The following result demonstrates how to deal with conditional statements in a proof *)
+let mem_cat = prove
+  (`!x s1 s2. mem x (cat s1 s2) <=> mem x s1 \/ mem x s2`,
+   (* The first line is a standard application of the list induction *)
+   GEN_TAC THEN LIST_INDUCT_TAC THENL [
+     (* The first subgoal trivially follows from definitions *)
+     REWRITE_TAC[mem; cat];
+     (* Unfold definitions *)
+     REWRITE_TAC[mem; cat] THEN
+       (* COND_CASES_TAC looks for conditional statements 
+	  (if C then A else B) in the goal.
+	  Then it automatically creates two subgoals:
+	  C ?- A and ~C ?- B.
+	  (That is, the first subgoal has the assumption C and the body
+	  of the conditional statement is expanded to A; the second
+	  subgoal has the assumption ~C and the body of the conditional
+	  statement is expanded to B.)
+	  The same effect can be achieved with
+	  ASM_CASES_TAC `C` THEN ASM_REWRITE_TAC[]
+	  but COND_CASES_TAC is more convenient since you don't need
+	  to provide the condition C explicitly. *)
+       COND_CASES_TAC THENL [
+	 (* The first subgoal is trivial *)
+	 REWRITE_TAC[];
+	 (* Rewrite with the induction assumption to conclude the proof *)
+	 ASM_REWRITE_TAC[]
+       ]
+   ]);;
+
+(* 6. Prove the following equality which says that an element x belongs to
+   the list without duplicates iff it belongs to the original list: *)
+let mem_undup = prove
+  (`!x s. mem x (undup s) <=> mem x s`,
+   ???
+  );;
+(* Hints: Apply the tactic COND_CASES_TAC several times to remove all conditional
+   statements *)
+
+(* 7. (No discussion) Prove the following result: *)
+let uniq_undup = prove
+  (`!s. uniq (undup s)`,
+   ???
+  );;
+(* Hints: Use mem_undup *)

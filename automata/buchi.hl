@@ -1,0 +1,43 @@
+let buchi_exists0 = prove(`?B. let S = FST B in
+			       let Q = FST (SND B) in
+			       let Q0 = FST (SND (SND B)) in
+			       let Qinf = FST (SND (SND (SND B))) in
+			       let delta = SND (SND (SND (SND B))) in
+				 Q0 SUBSET Q /\ Qinf SUBSET Q
+				   /\ !(q:B) (s:A). q IN Q /\ s IN S ==> delta q s SUBSET Q`,
+			  EXISTS_TAC `S:A->bool, Q:B->bool, Q:B->bool, Q:B->bool, \(q:B) (s:A). {}:B->bool` THEN
+			   ASM_REWRITE_TAC[] THEN REPEAT LET_TAC THEN
+			   REWRITE_TAC[SUBSET_REFL] THEN
+			   REPEAT STRIP_TAC THEN EXPAND_TAC "delta" THEN
+			   REWRITE_TAC[EMPTY_SUBSET]);;
+
+let buchi_type = new_type_definition "buchi" ("mk_buchi", "dest_buchi") buchi_exists0;;			   
+
+let buchiS = new_definition `buchiS b = FST (dest_buchi b)`;; 
+let buchiQ = new_definition `buchiQ b = FST (SND (dest_buchi b))`;;
+let buchiQ0 = new_definition `buchiQ0 b = FST (SND (SND (dest_buchi b)))`;;
+let buchiQ1 = new_definition `buchiQ1 b = FST (SND (SND (SND (dest_buchi b))))`;;
+let buchiD = new_definition `buchiD b = SND (SND (SND (SND (dest_buchi b))))`;;
+
+let LET_RULE = CONV_RULE (DEPTH_CONV let_CONV);;
+let buchiQ0subQ = prove(`!b. buchiQ0 b SUBSET buchiQ b`,
+			  REWRITE_TAC[buchiQ0; buchiQ] THEN MESON_TAC[LET_RULE buchi_type]);;
+
+let buchiQ1subQ = prove(`!b. buchiQ1 b SUBSET buchiQ b`,
+			  REWRITE_TAC[buchiQ1; buchiQ] THEN MESON_TAC[LET_RULE buchi_type]);;
+
+let buchiDsubQ = prove(`!b. !q s. q IN buchiQ b /\ s IN buchiS b ==>
+			 buchiD b q s SUBSET buchiQ b`,
+			  REWRITE_TAC[buchiS; buchiQ; buchiD] THEN MESON_TAC[LET_RULE buchi_type]);;
+
+let closure = new_definition `closure b = mk_buchi (buchiS b, buchiQ b, buchiQ0 b, buchiQ b, buchiD b)`;;
+
+let dest_closure = prove(`!b. dest_buchi (closure b) = (buchiS b, buchiQ b, buchiQ0 b, buchiQ b, buchiD b)`,
+  REWRITE_TAC[closure] THEN
+    REWRITE_TAC[GSYM (LET_RULE buchi_type)] THEN
+    REWRITE_TAC[buchiQ0subQ; SUBSET_REFL; buchiDsubQ]);;
+
+let is_run = new_definition `is_run (b:(S,Q)buchi) s r <=> r 0 IN buchiQ0 b 
+  /\ !i. 0 < i ==> r i IN (buchiD b) (r (i - 1)) (s (i - 1))`;;
+
+let accepts = `accepts b s <=> 

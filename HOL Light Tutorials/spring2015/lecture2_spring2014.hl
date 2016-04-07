@@ -1,0 +1,130 @@
+(* HOL Light encoding of the barber paradox. *)
+(* ? is the existential quantifier.
+   ! is the universal quantifier.
+   x:A denotes a variable x with type A *)
+let barber_tm =
+  `?x:A. Man x /\ !y. Man y
+    ==> (Shaves x y <=> ~(Shaves y y))`;;
+
+(* http://en.wikipedia.org/wiki/Barber_paradox
+   Suppose there is a town with just one barber, 
+   who is male. In this town, every man keeps himself clean-shaven, 
+   and he does so by doing exactly one of two things:
+   1) shaving himself; or
+   2) being shaved by the barber.
+   
+   Also, "The barber is a man in town who shaves all those, and only those, 
+   men in town who do not shave themselves." *)
+
+(* MESON[] is a decision procedure for FOL. *)
+(* It can prove some FOL theorems automatically. *)
+(* If it cannot prove a given proposition, it fails
+   with an error message. *)
+MESON[] barber_tm;;
+
+(* MESON[] was not successful because barber_tm is not a theorem,
+   but its negation is a theorem. *)
+let neg_barber_tm =
+  `~(?x:A. Man x /\ !y. Man y
+    ==> (Shaves x y <=> ~(Shaves y y)))`;;
+MESON[] neg_barber_tm;;
+
+(* Let's prove the barber paradox manually without MESON[]. *)
+(* There are many theorems already defined in HOL Light which
+   could be helpful in our proof. In particular, we want to
+   rewrite the initial term to get an equivalent formulation
+   without negations before quantifiers. *)
+(* We use the following theorems: *)
+(* negation of the existential quantifier *)
+NOT_EXISTS_THM;;
+(* De Morgan's theorem *)
+DE_MORGAN_THM;;
+(* negation of the universal quantifier *)
+NOT_FORALL_THM;;
+(* negation of the implication *)
+NOT_IMP;;
+let eq_th = REWRITE_CONV[NOT_EXISTS_THM; DE_MORGAN_THM; NOT_FORALL_THM; NOT_IMP] neg_barber_tm;;
+
+(* The most common way to prove theorems in HOL Light is
+   a backward reasoninig method. *)
+(* We start with a goal (a term which we want to prove) and
+   then try to figure out how this goal can be obtained from
+   other (possibly simpler) subgoals. We move from a goal to subgoals
+   by applying special functions which are called tactics. *)
+(* Each tactic corresponds to an inference rule. For instance, the tactic
+   CONJ_TAC can be applied to a goal ?- a /\ b and yields two new subgoals
+   ?- a and ?- b (the notation A1,...,An ?- tm denotes a goal tm with
+   assumptions A1,...,An). Compare with the inference rule CONJ which
+   takes two theorems |-a and |- b, and yields |- a /\ b. It is clear that
+   the tactic CONJ_TAC is similar to CONJ but it works in the opposite
+   direction. *)
+(* We type "g" before the goal term in order to begin our backward proof. *)
+g `!x:A. ~(Man x) \/ ?y. Man y /\ ~(Shaves x y <=> ~Shaves y y)`;;
+
+(* The command "e" before a tactic, executes this tactic for
+   the current active goal. *)
+(* GEN_TAC removes !x:A. from the head of our goal. *)
+e GEN_TAC;;
+
+(* (ASM_CASES_TAC tm) splits the current goal ?- g into two subgoals:
+   tm ?- g and ~tm ?- g *)
+(* Note: do not forget to provide explicit types for x (:A) and for
+   the term (:bool). HOL Light doesn't take into account any context
+   information and parses each term independently from previously
+   defined terms. *)
+e (ASM_CASES_TAC `Man (x:A):bool`);;
+(* First, we need to prove Man(x) ?- ~Man x \/ P *)
+(* DISJ2_TAC transforms a goal ?- a \/ b into ?- b *)
+e DISJ2_TAC;;
+(* Now we need to prove ?- ?y. Man y /\ ~(Shaves x y <=> ~Shaves y y) *)
+(* EXISTS_TAC provides a witness for the existential quantifier. *)
+e (EXISTS_TAC `x:A`);;
+(* ASM_REWRITE_TAC[] rewrites the goal with given equational theorems
+   and with all equational theorems in assumptions.
+   Note: in HOL Light any theorem can be treated as an equational theorem
+   because |- P is the same as |- P <=> T *)
+e (ASM_REWRITE_TAC[]);;
+(* The last step is to prove ~(Shaves y y <=> ~Shaves y y).
+   We solve this goal by rewriting with a custom theorem which we
+   prove with TAUT. *)
+e (REWRITE_TAC[TAUT `~(P <=> ~P)`]);;
+
+(* It is left to prove the second subgoal. *)
+(* DISJ1_TAC transforms a goal ?- a \/ b into ?- a *)
+e DISJ1_TAC;;
+(* It is enough to rewrite with the assumption to finish the proof. *)
+e (ASM_REWRITE_TAC[]);;
+
+(* When all subgoals are proved, we can get the final theorem
+   with the following function: *)
+let barber_th1 = top_thm();;
+
+(* The final result (a theorem and its proof) can be written with
+   the function "prove" which takes the statement of the theorem
+   as the first arguments and its proof as the second argument. *)
+(* The operator THEN connects proof steps. *)
+(* ASM_CASES_TAC splits the goal into two subgoals. It is necessary
+   to provide different proof steps for each subgoal. The operator
+   THENL is used. A list with two entries follows THENL, where each
+   entry proves its own subgoal. *)
+let barber_th = prove(`!x:A. ~(Man x) \/ ?y. Man y /\ ~(Shaves x y <=> ~Shaves y y)`,
+ GEN_TAC THEN
+   ASM_CASES_TAC `Man (x:A):bool` THENL
+   [
+     DISJ2_TAC THEN
+       EXISTS_TAC `x:A` THEN
+       ASM_REWRITE_TAC[] THEN
+       REWRITE_TAC[TAUT `~(P <=> ~P)`];
+     DISJ1_TAC THEN
+       ASM_REWRITE_TAC[]
+   ]);;
+
+(* Emacs: it is possible to execute the proof above step by step with
+   the following commands.
+   Move the cursor over the goal term and press C-c C-g.
+   Move the cursor to the next line and press C-c C-l.
+   This command will execute the tactic on the line and moves
+   the cursor to the next line (press C-C l to execute the command
+   without moving the cursor).
+   The command C-c C-b cancels the previous proof command.
+   The command C-C C-p prints the current goal. *)

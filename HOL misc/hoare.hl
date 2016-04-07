@@ -1,0 +1,141 @@
+needs "Examples/prog.ml";;
+
+install_parser ("correct", parse_program_assertion);;
+
+let EXAMPLE_FACTORIAL = prove
+ (`correct
+   T
+     var x,y,n;
+       x := 0;
+       y := 1;
+       while x < n do [invariant x <= n /\ (y = FACT x); measure n - x]
+        (x := x + 1;
+         y := y * x)
+     end
+   y = FACT n`,
+  VC_TAC THENL
+   [STRIP_TAC THEN ASM_REWRITE_TAC[FACT; LE_0];
+    REWRITE_TAC[CONJ_ASSOC; NOT_LT; LE_ANTISYM] THEN MESON_TAC[];
+    REWRITE_TAC[GSYM ADD1; FACT] THEN STRIP_TAC THEN
+    ASM_REWRITE_TAC[MULT_AC] THEN UNDISCH_TAC `x < n` THEN ARITH_TAC
+   ]
+);;
+
+
+let ex_sqrt = prove
+  (`correct
+     T
+     var y1, y2, y3, x;
+     y1 := 0;
+     y2 := 1;
+     y3 := 1;
+     while y3 <= x do [invariant y1 EXP 2 <= x /\ y3 = (y1 + 1) EXP 2 /\ y2 = 2 * y1 + 1;
+		       measure (x + 1) - y3]
+	 (y1 := y1 + 1;
+	  y2 := y2 + 2;
+	  y3 := y3 + y2)
+   end
+   (y1 EXP 2 <= x /\ x < (y1 + 1) EXP 2)`,
+  VC_TAC THENL [
+    STRIP_TAC THEN ASM_REWRITE_TAC[] THEN ARITH_TAC;
+    ARITH_TAC;
+    ARITH_TAC
+  ]);;
+
+
+let ex_if = prove
+  (`correct
+     T
+     var x, y, z;
+     if x < y then z := y else z := x
+   end
+  (z >= x /\ z >= y)`,
+  VC_TAC THENL [
+    ARITH_TAC;
+    ARITH_TAC;
+  ]);;
+
+
+let ex_index = prove
+  (`correct
+     T
+     var i, x:A, s, f;
+     i := 0;
+     f := F;
+     while (i < LENGTH s /\ ~f) do [invariant (f ==> EL i s = x /\ i < LENGTH s)
+					;				        
+				    measure LENGTH s - i - if f then 1 else 0]
+	 (if (EL i s = x) then (f := T) else (i := i + 1))
+   end
+   (f ==> EL i s = x /\ i < LENGTH s)`,
+  VC_TAC THENL [
+    SIMP_TAC[];
+    REWRITE_TAC[DE_MORGAN_THM; NOT_LT] THEN
+      STRIP_TAC THEN ASM_SIMP_TAC[];
+    STRIP_TAC THEN ASM_SIMP_TAC[] THEN
+      ASM_ARITH_TAC;
+    STRIP_TAC THEN ASM_SIMP_TAC[] THEN
+      ASM_ARITH_TAC
+  ]);;
+
+
+let update = define `update [] i x = [] /\ 
+  update (CONS h t) 0 x = CONS x t /\ 
+  update (CONS h t) (SUC n) x = CONS h (update t n x)`;;
+
+let count = define `count x [] = 0 /\ 
+  count x (CONS h t) = (if x = h then 1 else 0) + count x t`;;
+
+let swap = new_definition `swap (s, i1, i2) = update (update s i1 (EL i2 s)) i2 (EL i1 s)`;;
+
+let el_update = prove(`!x s i. i < LENGTH s
+			==> EL i (update s i x) = x /\
+			    (!j. ~(j = i) ==> EL j (update s i x) = EL j s)`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[update; LENGTH; LT] THEN
+     INDUCT_TAC THEN REWRITE_TAC[update; EL; HD; TL] THENL [
+       DISCH_TAC THEN INDUCT_TAC THEN REWRITE_TAC[EL; TL];
+       ALL_TAC
+     ] THEN
+     DISCH_TAC THEN CONJ_TAC THENL [
+       FIRST_X_ASSUM (MP_TAC o SPEC `i:num`) THEN ANTS_TAC THENL [
+	 ASM_ARITH_TAC;
+	 ALL_TAC
+       ] THEN
+	 SIMP_TAC[];
+       ALL_TAC
+     ] THEN
+     INDUCT_TAC THEN REWRITE_TAC[EL; HD; TL; SUC_INJ] THEN
+     DISCH_TAC THEN FIRST_X_ASSUM (MP_TAC o SPEC `i:num`) THEN ANTS_TAC THENL [
+       ASM_ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     ASM_SIMP_TAC[]);;
+
+let count_same_update = prove(`!(x:A) s i. i < LENGTH s ==>
+	count x (update s i x) = (if EL i s = x then 0 else 1) + count x s`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[LENGTH; LT] THEN
+     INDUCT_TAC THEN REWRITE_TAC[update; count; EL; HD; TL] THENL [
+       ASM_CASES_TAC `x = h:A` THEN ASM_REWRITE_TAC[] THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     DISCH_TAC THEN SUBGOAL_THEN `i < LENGTH (t:(A)list)` (LABEL_TAC "h") THENL [
+       ASM_ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     REMOVE_THEN "h" (fun th -> FIRST_X_ASSUM (MP_TAC o C MATCH_MP th)) THEN
+     ASM_SIMP_TAC[] THEN ARITH_TAC);;
+
+let count_diff_update = prove(`!x (y:A) s i. i < LENGTH s /\ ~(x = y) ==>
+       count y (update s i x) = count y s - if EL i s = y then 1 else 0`,
+   GEN_TAC THEN GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[LENGTH; LT] THEN
+     INDUCT_TAC THEN REWRITE_TAC[update; count; EL; HD; TL] THENL [
+       DISCH_TAC THEN ASM_CASES_TAC `y = h:A` THEN ASM_REWRITE_TAC[] THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     DISCH_TAC THEN SUBGOAL_THEN `i < LENGTH (t:(A)list) /\ ~(x = y:A)` (LABEL_TAC "h") THENL [
+       ASM_REWRITE_TAC[] THEN POP_ASSUM MP_TAC THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     REMOVE_THEN "h" (fun th -> FIRST_X_ASSUM (MP_TAC o C MATCH_MP th)) THEN
+     ASM_SIMP_TAC[] THEN ARITH_TAC);;
+   

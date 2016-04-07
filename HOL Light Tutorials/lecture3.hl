@@ -1,0 +1,265 @@
+(************************************)
+(* Inductive proofs in HOL Light    *)
+(************************************)
+
+(* Prove a simple inequality: 1 <= 2 EXP n for all n *)
+let ineq1 = prove(`!n. 1 <= 2 EXP n`,
+		  (* INDUCT_TAC can be applied to goals in the form ?- !n. P n
+		     where n is a natural number.
+		     It yields two subgoals: ?- P 0 and P n ?- P (SUC n)
+		     (SUC n = n + 1, the corresponding theorem is ADD1.) *)
+		  INDUCT_TAC THENL [
+		    (* The first subgoal can be easily solved by rewriting
+		       with the definition of EXP and then by applying the
+		       linear arithmetic tactic ARITH_TAC. *)
+		    REWRITE_TAC[EXP] THEN
+		      ARITH_TAC;
+		    (* The second subgoal is also easy. The only difference is that
+		       it is necessary to use the induction assumption.
+		       ASM_ARITH_TAC is a special form of ARITH_TAC which
+		       takes into account all assumptions. *)
+		    REWRITE_TAC[EXP] THEN
+		      ASM_ARITH_TAC
+		  ]);;
+
+(* HOL Light Emacs mode commands.
+   It is possible to execute the proof above step by step with
+   the following commands.
+   Move the cursor over the goal term and press C-c C-g.
+   Move the cursor to the next line and press C-c C-l.
+   This command will execute the tactic on the line and move
+   the cursor to the next line (press C-C l to execute the command
+   without moving the cursor).
+   The command C-c C-b cancels one proof step.
+   The command C-C C-p prints the current goal. 
+   When the proof is finished, press C-c C-e to execute the whole proof
+   and assign the resulting theorem to a variable.
+*)
+(* If you don't use Emacs with HOL Light, then the proof above can be 
+   interactively developed with the following commands:
+*)
+(* Set the main goal *)
+g `!n. 1 <= 2 EXP n`;;
+(* Execute all tactics *)
+e (INDUCT_TAC);;
+e (REWRITE_TAC[EXP]);;
+e (ARITH_TAC);;
+e (REWRITE_TAC[EXP]);;
+e (ASM_ARITH_TAC);;
+(* Get the result *)
+let ineq1 = top_thm();;
+
+(* Explanation of THEN, THENL.
+   THEN connects two tactics. t1 THEN t2 is a new tactic which works as follows:
+   the tactic t1 is applied and then the tactic t2 is applied to all subgoals
+   produced by the first tactic.
+   THEN is left-associative, so t1 THEN t2 THEN t3 is the same as
+   (t1 THEN t2) THEN t3.
+   THENL is similar to THEN but it requires a list of tactics as its right argument:
+   t THENL [t1; t2; ...; t_k]. This works as follows: the tactic t is applied and then
+   t1 is applied to the first subgoal produced by t, t2 is applied to the second
+   subgoal produced by t, etc. The number of elements in the list should be equal to
+   the number of subgoals produced by the tactic t.
+   THEN and THENL can be combined:
+   t0 THENL [t1;...;t_k] THEN r.
+   This tactic applies t0 first, then it applies t1,...,t_k to corresponding subgoals,
+   and then it applies r to all remaining subgoals (i.e., subgoals which have not been
+   completely proved with t1,...,tk).
+   The proof of the ineq1 can be written in the following way: *)
+let ineq1 = prove(`!n. 1 <= 2 EXP n`,
+		  INDUCT_TAC THENL [
+		    REWRITE_TAC[EXP] THEN
+		      ARITH_TAC;
+		    ALL_TAC
+		  ] THEN
+		    REWRITE_TAC[EXP] THEN
+		    ASM_ARITH_TAC
+		 );;
+(* Here, the tactic REWRITE_TAC[EXP] THEN ARITH_TAC is applied to the first
+   subgoal produced by INDUCT_TAC. This tactic solves the first subgoal.
+   The tactic ALL_TAC is applied to the second subgoal. This tactic does nothing
+   and does not change the corresponding subgoal. Hence, the tactic 
+   REWRITE_TAC[EXP] THEN ASM_ARITH_TAC will be applied to this unchanged second
+   subgoal. *)
+
+
+(* Let's prove the following inequality: n <= 2 EXP n *)
+let ineq2 = prove(`!n. n <= 2 EXP n`,
+		  (* Apply the induction tactic *)
+		  INDUCT_TAC THENL [
+		    (* The first subgoal can be solved immediately *)
+		    ARITH_TAC;
+		    (* Rewrite with the definition of EXP *)
+		    REWRITE_TAC[EXP] THEN
+		      (* ASM_ARITH_TAC fails at this point:
+			 We need an additional result which tells that
+			 1 <= 2 EXP n. This is the inequality which we proved before.
+			 ASSUME_TAC adds a given theorem to the list of assumption.
+			 We also need to instantiate all universally quantified
+			 variables in this theorem (ASM_ARITH_TAC cannot instantiate
+			 this variables automatically). SPEC_ALL can be applied to
+			 any theorem and it returns the same theorem where universally
+			 quantified variables are instantiated. *)
+		      ASSUME_TAC (SPEC_ALL ineq1) THEN
+		      ASM_ARITH_TAC
+		  ]);;
+
+(* Let's prove the 2-induction principle. *)
+let induct2 = prove(`!P. (P 0 /\ P 1 /\ 
+		      (!n. P n /\ P (n + 1) ==> P (n + 2)))
+		      ==> !n. P n`,
+  (* The first step is to remove the universal quantifier !P *)
+  GEN_TAC THEN
+    (* The tactic STRIP_TAC does several things. Its description can be found at
+       http://www.cl.cam.ac.uk/~jrh13/hol-light/HTML/STRIP_TAC.html
+       Here, we want to move the antecedent to the list of assumption and
+       split it into 3 separate assumptions. *)
+    STRIP_TAC THEN
+    (* Prove a stronger result: !n. P n /\ P (n + 1).
+       The tactic SUBGOAL_THEN starts a new subgoal. It also takes another tactic
+       as the second argument. This tactic is applied to the theorem produced by
+       the subgoal. In our case, we want to move the subgoal result into the list
+       of assumption with ASSUME_TAC. *)
+    SUBGOAL_THEN `!n. P n /\ P (n + 1)` ASSUME_TAC THENL [
+      (* We prove the subgoal by induction *)
+      INDUCT_TAC THENL [
+	(* The first case follows directly from assumptions.
+	   We also need to simplify the expression 0 + 1 and so we
+	   rewrite with ADD *)
+	ASM_REWRITE_TAC[ADD];
+	(* The second case has the form P (SUC n) /\ P (SUC n + 1) *)
+	(* ADD1 rewrites SUC n as n + 1 *)
+	ASM_REWRITE_TAC[ADD1] THEN
+	  (* It is left to prove P ((n + 1) + 1) *)
+	  (* Clearly, (n + 1) + 1 = n + 2. We rewrite with this result
+	     which we can directly derive with ARITH_RULE. *)
+	  REWRITE_TAC[ARITH_RULE `(n + 1) + 1 = n + 2`] THEN
+	  (* ASM_SIMP_TAC[] can finish off the proof since the goal easily
+	     follows from assumptions *)
+	  ASM_SIMP_TAC[]
+      ];
+      (* The original goal trivially follows from the stronger subgoal. *)
+      ASM_REWRITE_TAC[]
+    ]);;
+
+(* Define Fibonacci numbers. *)
+(* "define" can be used to define a recursive function in HOL Light. *)
+let fib = define `fib 0 = 0 /\ fib 1 = 1 /\ 
+  fib (n + 2) = fib n + fib (n + 1)`;;
+
+(* Prove an inequality involving Fibonacci numbers. *)
+let fib_ineq = prove(`!n. fib n <= 2 EXP n`,
+		     (* The n-th Fibonacci number depends on two previous numbers,
+			so 2-induction works well here. *)
+		     (* MATCH_MP_TAC takes a theorem in the form P ==> Q and tries
+			to match Q with the goal. If the match is successful,
+			then the goal ?- Q is replaced with the goal ?- P *)
+		     MATCH_MP_TAC induct2 THEN
+		       (* REPEAT t applies the tactic t as many times as possible.
+			  In our case, we want to apply STRIP_TAC until all assumptions
+			  are moved to the assumption list and the goal is split
+			  into several parts. *)
+		       REPEAT STRIP_TAC THENL [
+			 (* The first and second subgoals can be easily solved
+			    by rewriting with definitions and linear arithmetic *)
+			 REWRITE_TAC[fib; EXP] THEN
+			   ARITH_TAC;
+			 REWRITE_TAC[fib] THEN
+			   ARITH_TAC;
+			 (* Rewrite with the definition of fib *)
+			 REWRITE_TAC[fib] THEN
+			   (* We need to prove: fib n + fib (n + 1) <= a *)
+			   (* The theorem LE_TRANS has the form:
+			      !m n p. m <= n /\ n <= p ==> m <= p
+			      When we apply this theorem to our goal, we get
+			      ?n'. fib n + fib (n + 1) <= n' /\ n' <= a
+			      MATCH_MP_TAC is able to match the goal but it is not
+			      able to find an instance of the variable n in the theorem
+			      LE_TRANS. So, this variable is existentially quantified
+			      in our new goal: we need to provide a witness which
+			      can prove the result. *)
+			   MATCH_MP_TAC LE_TRANS THEN
+			   (* EXISTS_TAC has one argument: a witness for the existentially
+			      quantified variable *)
+			   EXISTS_TAC `2 EXP n + 2 EXP (n + 1)` THEN
+			   (* Split the goal into two subgoals *)
+			   STRIP_TAC THENL [
+			     (* The first case follows directly from assumptions *)
+			     ASM_ARITH_TAC;
+			     (* Before we can apply ARITH_TAC, we need to rewrite
+				EXP (n + 1) and EXP (n + 2).
+				We prove auxiliary equalities with ARITH_RULE and
+				rewrite with them. *)
+     REWRITE_TAC[ARITH_RULE `n + 1 = SUC n`; ARITH_RULE `n + 2 = SUC (SUC n)`] THEN
+       (* Now, we can rewrite with the definition of EXP *)
+       REWRITE_TAC[EXP] THEN
+       (* ARITH_TAC concludes the proof *)
+       ARITH_TAC
+			   ]]);;
+
+(***************************************)
+(* Inductive proofs for lists          *)
+(***************************************)
+
+(* Recall that lists in HOL Light are constructed with two constants:
+   [] is an empty list;
+   CONS h t constructs a new list from a given list t and an element h
+   by appending the element h in front of t. *)
+   
+(* Many functions on lists can be defined in a recursive way. *)
+(* Define the length of a list. Clearly, the length of an empty list is 0.
+   The length of a list constructed by appending h to t is the length of t plus 1
+   (we write SUC instead of + 1) *)
+let length = define `length [] = 0 /\ 
+  length (CONS h t) = SUC (length t)`;;
+
+(* Define concatenation of two lists *)
+let cat = define `cat [] s = s /\
+  cat (CONS h t) s = CONS h (cat t s)`;;
+
+(* Note: these two function are already defined in HOL Light and they are called
+   LENGTH and APPEND. *)
+
+(* Prove that the length of a concatenated list is the sum of lengths of two lists *)
+let length_cat = prove(`!s1 s2. length (cat s1 s2) =
+    length s1 + length s2`,
+   (* The tactic LIST_INDUCT_TAC can be applied to a goal in the form ?- !s. P s
+      where s is a list.
+      It yields two subgoals: ?- P [] and P t ?- P (CONS h t) *)
+   LIST_INDUCT_TAC THENL [
+     (* Rewrite with definitions *)
+     REWRITE_TAC[cat; length] THEN
+       (* It is left to prove that 0 + a = a *)
+       ARITH_TAC;
+     (* Rewrite with definitions *)
+     REWRITE_TAC[cat; length] THEN
+       (* Rewrite with the induction hypothesis *)
+       ASM_REWRITE_TAC[] THEN
+       (* It is left to prove that SUC (a + b) = (SUC a) + b *)
+       ARITH_TAC
+   ]);;
+
+(* Comparing tactics for both subgoals in the previous proof, we see that
+   they are almost identical. We can replace REWRITE_TAC[cat; length] with
+   ASM_REWRITE_TAC[cat; length] and get identical proofs. Hence, we can
+   write a shorter proof of the theorem by applying the same tactic to both
+   subgoals generated by LIST_INDUCT_TAC: *)
+let length_cat = prove(`!s1 s2. length (cat s1 s2) =
+    length s1 + length s2`,
+   LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[cat; length] THEN ARITH_TAC);;
+
+(* Let's prove another simple result: s concatenated with an empty list is s *)
+let cats0 = prove(`!s. cat s [] = s`,
+		  (* Induction *)
+		  LIST_INDUCT_TAC THENL [
+		    (* It is enough to rewrite with the definition *)
+		    REWRITE_TAC[cat];
+		    (* Rewrite with the definition *)
+		    REWRITE_TAC[cat] THEN
+		      (* Rewrite with the induction hypothesis *)
+		      ASM_REWRITE_TAC[]
+		  ]);;
+
+(* A shorter proof is also possible: *)
+let cats0 = prove(`!s. cat s [] = s`,
+		  LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[cat]);;

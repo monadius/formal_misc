@@ -1,0 +1,204 @@
+#load "unix.cma";;
+
+(* Defines a procedure for testing *)
+type test_method = {
+  method_name : string;
+  constructor : thm list -> (term list -> thm);
+};;
+
+(* Defines one test case *)
+type test_case = {
+  (* Case name *)
+  case_name : string;
+  (* The number of repetitions *)
+  rep : int;
+  (* Arguments as terms *)
+  arg_tms : term list;
+  (* The answer as a term *)
+  answer_tm : term;
+};;
+
+(* Defines a test *)
+type test = {
+  (* Name *)
+  name : string;
+  (* Definitional theorems *)
+  def_ths : thm list;
+  (* Test cases *)
+  cases : test_case list;
+  (* Methods *)
+  mutable methods : test_method list;
+  mutable constructed_methods : (string * (term list -> thm)) list;
+};;
+
+(* Creates a test method *)
+let mk_method name constructor = {
+  method_name = name;
+  constructor = constructor;
+};;
+
+(* Creates a test case *)
+let mk_case name rep args answer = {
+  case_name = name;
+  rep = rep;
+  arg_tms = args;
+  answer_tm = answer;
+};;
+
+(* Creates a test *)
+let mk_test name ths ?(methods = []) cases = {
+  name = name;
+  def_ths = ths;
+  cases = map (fun (name, rep, args, answer) -> mk_case name rep args answer) cases;
+  methods = methods;
+  constructed_methods = [];
+};;
+
+(* Creates a test with the same number of repetitions for all test cases *)
+let mk_test_rep rep name ths ?(methods = []) cases =
+  let cases = map (fun (name, args, answer) -> name, rep, args, answer) cases in
+    mk_test name ths ~methods:methods cases;;
+
+(* Converts a hashtable into a list *)
+let list_of_hashtbl t =
+  Hashtbl.fold (fun k v s -> v :: s) t [];;
+
+(* Functions for getting, adding, and clearing tests *)
+let tests, add_test, clear_tests =
+  let table = ref ([] : test list) in
+    (fun () -> !table),
+    (fun t -> table := !table @ [t]),
+    (fun () -> table := []);;
+
+(* A modified "define" which fails less often on already defined constants *)
+let my_define tm =
+  try
+    find (fun x -> can (term_match [] tm) (concl x)) !the_definitions
+  with Failure "find" ->
+    define tm;;
+
+(* Applies the first non-failing function from the list to 'a' *)
+let rec apply_first a = function
+  | [] -> failwith "apply_first"
+  | f :: fs ->
+      try f a with _ -> apply_first a fs;;
+
+(* Applies all functions to 'a' until all functions fail *)
+let apply_many a fs = repeat (C apply_first fs) a;;
+
+(* Extracts the function name *)
+let extract_lhs th =
+  let c_tm = concl th in
+  let tm = apply_many c_tm [
+    fst o dest_eq;
+    snd o dest_forall;
+    fst o dest_conj;
+    fst o dest_comb
+  ] in
+    tm;;
+
+(* Creates a test method from a conversion *)
+let method_of_conv name conv =
+  let fail msg = failwith (sprintf "method_of_conv(%s): %s" name msg) in
+  let constructor = function
+    | [th] ->
+	begin
+	  let lhs = extract_lhs th in
+	  let const_name = (fst o dest_const) lhs in
+	  let poly_flag = (type_vars_in_term lhs <> []) in
+	    fun tms ->
+	      let tm = 
+		if poly_flag then
+		  list_mk_icomb const_name tms
+		else
+		  list_mk_comb (lhs, tms) in
+		conv tm
+	end
+    | _ -> fail "only one definitional theorem is allowed" in {
+      method_name = name;
+      constructor = constructor;
+    };;
+
+
+let method_of_raw_conv name tm conv =
+  let constructor ths =
+    let const_name = (fst o dest_const) tm in
+    let poly_flag = (type_vars_in_term tm <> []) in
+      fun tms ->
+	let tm =
+	  if poly_flag then
+	    list_mk_icomb const_name tms
+	  else
+	    list_mk_comb (tm, tms) in
+	  conv tm in 
+    {
+      method_name = name;
+      constructor = constructor;
+    };;
+
+(* Adds a method to all tests *)
+let add_method_to_tests m tests =
+  let _ = map (fun t -> t.methods <- t.methods @ [m]) tests in
+    ();;
+
+
+(* Constructs a method for the given test *)
+let construct_method test m =
+  let f = 
+    try
+      m.constructor test.def_ths
+    with 
+      | Failure msg ->
+	  (fun _ -> failwith ("FAIL [CONSTRUCTION]: " ^ msg))
+      | _ ->
+	  (fun _ -> failwith "FAIL [CONSTUCTION]: unknown") in
+    m.method_name, f;;
+    
+(* Constructs all methods for given tests *)
+let construct_methods =
+  let construct test =
+    test.constructed_methods <- map (construct_method test) test.methods in
+    fun tests -> 
+      let _ = map construct tests in
+	();;
+
+(* Runs one test case *)
+let run_test_case fmt test case =
+  let pn str = Format.pp_print_string fmt str; Format.pp_print_newline fmt () in
+  let run (name, f) =
+    let msg =
+      try
+	let start = Unix.gettimeofday() in
+	let result = f case.arg_tms in
+	let tm = (rand o concl) result in
+	  if tm = case.answer_tm then
+	    let _ =
+	      for i = 1 to case.rep do
+		let _ = f case.arg_tms in ()
+	      done in
+	    let stop = Unix.gettimeofday() in
+	      sprintf "%.4f" (stop -. start)
+	  else
+	    "ERROR: " ^ string_of_term tm
+      with 
+	Failure msg -> "FAIL: " ^ msg
+	| _ -> "FAIL" in
+      pn (sprintf "%s:\t %s" name msg) in
+  let _ = pn (sprintf "CASE - %s (%d)" case.case_name case.rep) in
+  let _ = map run test.constructed_methods in
+    ();;
+    
+(* Runs a test *)
+let run_test fmt test =
+  let pn str = Format.pp_print_string fmt str; Format.pp_print_newline fmt () in
+  let _ = pn (sprintf "TEST %s" test.name) in
+  let _ = map (run_test_case fmt test) test.cases in
+    ();;
+
+(* Runs all given tests *)
+let run_tests fmt tests = 
+  let _ = map (fun test ->
+		 run_test fmt test;
+		 Format.pp_print_newline fmt ()) tests in
+    ();;
+

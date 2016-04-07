@@ -1,0 +1,86 @@
+;;
+let x = 2;;
+
+EXP;;
+
+let ineq1 = prove(`!n. 1 <= 2 EXP n`,
+		  INDUCT_TAC THENL [
+		    REWRITE_TAC[EXP] THEN
+		      ARITH_TAC;
+		    REWRITE_TAC[EXP] THEN
+		      ASM_ARITH_TAC
+		  ]);;
+
+let ineq2 = prove(`!n. n <= 2 EXP n`,
+		  INDUCT_TAC THENL [
+		    ARITH_TAC;
+		    REWRITE_TAC[EXP] THEN
+		      ASSUME_TAC (SPEC_ALL ineq1) THEN
+		      ASM_ARITH_TAC
+		  ]);;
+
+search[`0 + n = n`];;
+ADD1;;
+
+let induct2 = prove(`!P. (P 0 /\ P 1 /\ 
+		      (!n. P n /\ P (n + 1) ==> P (n + 2)))
+		      ==> !n. P n`,
+  GEN_TAC THEN
+    STRIP_TAC THEN
+    SUBGOAL_THEN `!n. P n /\ P (n + 1)` ASSUME_TAC THENL [
+      INDUCT_TAC THENL [
+	ASM_REWRITE_TAC[ADD];
+	ASM_REWRITE_TAC[ADD1] THEN
+	  REWRITE_TAC[ARITH_RULE `(n + 1) + 1 = n + 2`] THEN
+	  ASM_SIMP_TAC[]
+      ];
+      ASM_REWRITE_TAC[]
+    ]);;
+ 
+let fib = define `fib 0 = 0 /\ fib 1 = 1 /\ 
+  fib (n + 2) = fib n + fib (n + 1)`;;
+LE_TRANS;;
+let fib_ineq = prove(`!n. fib n <= 2 EXP n`,
+		     MATCH_MP_TAC induct2 THEN
+		       REPEAT STRIP_TAC THENL [
+			 REWRITE_TAC[fib; EXP] THEN
+			   ARITH_TAC;
+			 REWRITE_TAC[fib] THEN
+			   ARITH_TAC;
+			 REWRITE_TAC[fib] THEN
+			   MATCH_MP_TAC LE_TRANS THEN
+			   EXISTS_TAC `2 EXP n + 2 EXP (n + 1)` THEN
+			   STRIP_TAC THENL [
+			     ASM_ARITH_TAC;
+     REWRITE_TAC[ARITH_RULE `n + 1 = SUC n`; ARITH_RULE `n + 2 = SUC (SUC n)`] THEN
+       REWRITE_TAC[EXP] THEN
+       ARITH_TAC
+			   ]]);;
+
+
+let length = define `length [] = 0 /\ 
+  length (CONS h t) = SUC (length t)`;;
+
+let cat = define `cat [] s = s /\
+  cat (CONS h t) s = CONS h (cat t s)`;;
+
+let length_cat = prove(`!s1 s2. length (cat s1 s2) =
+    length s1 + length s2`,
+   LIST_INDUCT_TAC THENL [
+     REWRITE_TAC[cat; length] THEN
+       ARITH_TAC;
+     REWRITE_TAC[cat; length] THEN
+       ASM_REWRITE_TAC[] THEN
+       ARITH_TAC
+   ]);;
+
+let length_cat = prove(`!s1 s2. length (cat s1 s2) =
+    length s1 + length s2`,
+   LIST_INDUCT_TAC THEN ASM_REWRITE_TAC[cat; length] THEN ARITH_TAC);;
+
+let cats0 = prove(`!s. cat s [] = s`,
+		  LIST_INDUCT_TAC THENL [
+		    REWRITE_TAC[cat];
+		    REWRITE_TAC[cat] THEN
+		      ASM_REWRITE_TAC[]
+		  ]);;

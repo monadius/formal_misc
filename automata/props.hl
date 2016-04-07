@@ -1,0 +1,231 @@
+let concat = new_definition `concat (i:num) (f:num->A) (g:num->A) = 
+  \t. if t < i then f t else g (t - i)`;;
+
+let safety = new_definition `safety (P:(num->A)->bool) <=>
+  (!f. ~(P f) ==> ?i. !g. ~P (concat i f g))`;;
+
+let liveness = new_definition `liveness (P:(num->A)->bool) <=>
+  !i f. ?g. P (concat i f g)`;;
+
+let concat_id = prove(`!f i. concat i f (\t. f (t + i)) = f`,
+   REWRITE_TAC[FUN_EQ_THM; concat] THEN REPEAT GEN_TAC THEN
+     COND_CASES_TAC THEN REWRITE_TAC[] THEN
+     AP_TERM_TAC THEN
+     MATCH_MP_TAC SUB_ADD THEN
+     POP_ASSUM MP_TAC THEN ARITH_TAC);;
+
+let concat_id = prove(`!f i. concat i f (\t. f (t + i)) = f`,
+		      REWRITE_TAC[concat] THEN
+			MESON_TAC[FUN_EQ_THM; SUB_ADD; NOT_LT]);;
+
+
+let safety_alt = prove(`safety P <=>
+			 !f. P (f:num->A) <=> !i. ?g. P (concat i f g)`,
+ REWRITE_TAC[safety] THEN EQ_TAC THEN REPEAT STRIP_TAC THENL
+    [
+      EQ_TAC THEN REPEAT STRIP_TAC THENL
+	[
+	  EXISTS_TAC `\t. f (t + i):A` THEN
+	    ASM_REWRITE_TAC[concat_id];
+	  ALL_TAC
+	] THEN
+	POP_ASSUM MP_TAC THEN
+	ONCE_REWRITE_TAC[GSYM CONTRAPOS_THM] THEN
+	DISCH_THEN (fun th -> FIRST_X_ASSUM (MP_TAC o C MATCH_MP th)) THEN
+	REWRITE_TAC[NOT_FORALL_THM; NOT_EXISTS_THM];
+      ALL_TAC
+    ] THEN
+    UNDISCH_TAC `!f:num->A. P f <=> (!i. ?g. P (concat i f g))` THEN
+    DISCH_THEN (MP_TAC o SPEC `f:num->A`) THEN
+    ONCE_REWRITE_TAC[TAUT `(p <=> q) <=> (~p <=> ~q)`] THEN
+    ASM_REWRITE_TAC[NOT_FORALL_THM; NOT_EXISTS_THM]);;
+
+let safety_alt = prove(`safety P <=>
+			 !f. P (f:num->A) <=> !i. ?g. P (concat i f g)`,
+  REWRITE_TAC[safety] THEN MESON_TAC[concat_id]);;
+
+let safety_liveness_trivial = prove(`!P. safety P /\ liveness P ==>
+				      !f:num->A. P f`,
+   SIMP_TAC[safety_alt; liveness]);; 
+
+let safety_univ = prove(`safety UNIV`, REWRITE_TAC[safety; UNIV]);;
+
+let safety_empty = prove(`safety {}`, REWRITE_TAC[safety; EMPTY]);;
+
+let liveness_univ = prove(`liveness UNIV`, REWRITE_TAC[liveness; UNIV]);;
+
+let not_liveness_empty = prove(`~(liveness {})`, REWRITE_TAC[liveness; EMPTY]);;
+
+(* Some examples *)
+let safety_reach = prove(`!a:A. safety (\f. !t. ~(f t = a))`,
+  REWRITE_TAC[safety; NOT_FORALL_THM] THEN
+    REPEAT STRIP_TAC THEN
+    EXISTS_TAC `t + 1` THEN
+    GEN_TAC THEN EXISTS_TAC `t:num` THEN
+    ASM_REWRITE_TAC[concat; ARITH_RULE `t < t + 1`]);;
+
+let liveness_reach = prove(`!a:A. liveness (\f. ?t. f t = a)`,
+  REWRITE_TAC[liveness] THEN REPEAT GEN_TAC THEN
+    EXISTS_TAC `\t:num. a:A` THEN EXISTS_TAC `i:num` THEN
+    REWRITE_TAC[concat; LT_REFL]);;
+
+let safety_gen = prove(`!P:A->bool. safety (\f. !t. P (f t))`,
+  REWRITE_TAC[safety; NOT_FORALL_THM] THEN
+    REPEAT STRIP_TAC THEN
+    EXISTS_TAC `t + 1` THEN
+    GEN_TAC THEN EXISTS_TAC `t:num` THEN
+    ASM_REWRITE_TAC[concat; ARITH_RULE `t < t + 1`]);;
+
+
+let concat0 = prove(`concat 0 f g = g`,
+   REWRITE_TAC[concat; LT; SUB; ETA_AX]);;
+
+let concat_concat = prove(`concat i f (concat j (\t. f (t + i)) h)
+			    = concat (i + j) f h`,
+  REWRITE_TAC[FUN_EQ_THM; concat] THEN GEN_TAC THEN
+    COND_CASES_TAC THENL
+    [
+      ASM_SIMP_TAC[ARITH_RULE `x < i ==> x < i + j`];
+      ALL_TAC
+    ] THEN
+    ASM_SIMP_TAC[ARITH_RULE `~(x < i) ==> (x - i < j <=> x < i + j)`] THEN
+    COND_CASES_TAC THEN REWRITE_TAC[] THENL
+    [
+      ASM_SIMP_TAC[ARITH_RULE `~(x < i) ==> x - i + i = x`];
+      ALL_TAC
+    ] THEN
+    ASM_SIMP_TAC[ARITH_RULE `~(x < i + j) ==> x - i - j = x - (i + j)`]);;
+
+(* Decomposition theorem *)
+let safety_in = prove(`!P. safety P <=>
+	(!f. ~(f IN P) ==> ?i. !g. ~(concat i f g IN P))`,
+		      REWRITE_TAC[safety; IN]);;
+
+let liveness_in = prove(`!P. liveness P <=>
+			  !i f. ?g. concat i f g IN P`,
+			REWRITE_TAC[liveness; IN]);;
+
+let safety_inter = prove(`!P Q:(num->A)->bool. safety P /\ safety Q
+			==> safety (P INTER Q)`,
+  REWRITE_TAC[safety_in; IN_INTER; IN_UNION] THEN REPEAT STRIP_TAC THEN
+    ASM_MESON_TAC[]);;
+
+let safety_union = prove(`!P Q:(num->A)->bool. safety P /\ safety Q
+			  ==> safety (P UNION Q)`,
+  REWRITE_TAC[safety_in; IN_INTER; IN_UNION] THEN REPEAT STRIP_TAC THEN
+    POP_ASSUM MP_TAC THEN REWRITE_TAC[DE_MORGAN_THM; GSYM IMP_IMP] THEN
+    DISCH_THEN (fun th -> FIRST_X_ASSUM (STRIP_ASSUME_TAC o C MATCH_MP th)) THEN
+    DISCH_THEN (fun th -> FIRST_X_ASSUM (STRIP_ASSUME_TAC o C MATCH_MP th)) THEN
+    ABBREV_TAC `j:num = if i < i' then i' else i` THEN
+    SUBGOAL_THEN `i <= j /\ i' <= j:num` ASSUME_TAC THENL
+    [
+      EXPAND_TAC "j" THEN ARITH_TAC;
+      ALL_TAC
+    ] THEN
+    EXISTS_TAC `j:num` THEN GEN_TAC THEN
+    FIRST_X_ASSUM (MP_TAC o SPEC `concat (j - i') (\t. f (t + i')) g:num->A`) THEN
+    FIRST_X_ASSUM (MP_TAC o SPEC `concat (j - i) (\t. f (t + i)) g:num->A`) THEN
+    REWRITE_TAC[concat_concat] THEN
+    ASM_SIMP_TAC[ARITH_RULE `!a. a <= j ==> a + j - a = j`]);;
+
+let safety_complement = prove(`!i (f:num->A). safety (UNIV DIFF {concat i f g | g | T})`,
+   REWRITE_TAC[safety_in; IN_DIFF; DE_MORGAN_THM] THEN
+     REWRITE_TAC[IN_UNIV; IN_ELIM_THM] THEN
+     REPEAT STRIP_TAC THEN
+     EXISTS_TAC `i:num` THEN GEN_TAC THEN
+     EXISTS_TAC `g':num->A` THEN
+     ASM_REWRITE_TAC[concat; FUN_EQ_THM] THEN GEN_TAC THEN
+     MESON_TAC[]);;
+
+let safety_inters = prove(`!S. (!P:(num->A)->bool. P IN S ==> safety P)
+			    ==> safety (INTERS S)`,
+   REWRITE_TAC[safety] THEN
+     MESON_TAC[IN_INTERS; GSYM IN]);;
+
+let contraT = TAUT `!P. (~P ==> F) ==> P`;;
+
+let inter_thm = prove(`!P:(num->A)->bool. ?S L. safety S /\ liveness L /\
+			P = S INTER L`,
+   GEN_TAC THEN
+     ABBREV_TAC `S:(num->A)->bool = INTERS {X | P SUBSET X /\ safety X}` THEN
+     ABBREV_TAC `L:(num->A)->bool = UNIV DIFF (S DIFF P)` THEN
+     EXISTS_TAC `S:(num->A)->bool` THEN
+     EXISTS_TAC `L:(num->A)->bool` THEN
+     SUBGOAL_THEN `safety (S:(num->A)->bool)` (LABEL_TAC "safe") THENL
+     [
+       EXPAND_TAC "S" THEN MATCH_MP_TAC safety_inters THEN SET_TAC[];
+       ALL_TAC
+     ] THEN
+     ASM_REWRITE_TAC[] THEN STRIP_TAC THENL
+     [
+       EXPAND_TAC "L" THEN REWRITE_TAC[liveness_in] THEN
+	 REPEAT GEN_TAC THEN
+	 MATCH_MP_TAC contraT THEN
+	 PURE_REWRITE_TAC[NOT_EXISTS_THM] THEN
+	 DISCH_TAC THEN
+	 ABBREV_TAC `B = {concat i (f:num->A) g | g | T}` THEN
+	 SUBGOAL_THEN `B SUBSET (S DIFF (P:(num->A)->bool))` ASSUME_TAC THENL
+	 [
+	   EXPAND_TAC "B" THEN REWRITE_TAC[SUBSET; IN_ELIM_THM] THEN
+	     REPEAT STRIP_TAC THEN
+	     FIRST_X_ASSUM (MP_TAC o SPEC `g:num->A`) THEN
+	     ASM_REWRITE_TAC[] THEN EXPAND_TAC "L" THEN
+	     SET_TAC[];
+	   ALL_TAC
+	 ] THEN
+	 SUBGOAL_THEN `P SUBSET (S:(num->A)->bool)` ASSUME_TAC THENL
+	 [
+	   EXPAND_TAC "S" THEN SET_TAC[];
+	   ALL_TAC
+	 ] THEN
+	 ABBREV_TAC `Y:(num->A)->bool = S DIFF B` THEN
+	 SUBGOAL_THEN `P SUBSET (Y:(num->A)->bool)` ASSUME_TAC THENL
+	 [
+	   POP_ASSUM (fun th -> REWRITE_TAC[GSYM th]) THEN
+	     POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN
+	     SET_TAC[];
+	   ALL_TAC
+	 ] THEN
+	 SUBGOAL_THEN `safety (Y:(num->A)->bool)` ASSUME_TAC THENL
+	 [
+	   SUBGOAL_THEN `(Y:(num->A)->bool) = S INTER (UNIV DIFF B)` (fun th -> REWRITE_TAC[th]) THENL
+	     [
+	       EXPAND_TAC "Y" THEN SET_TAC[];
+	       ALL_TAC
+	     ] THEN
+	     MATCH_MP_TAC safety_inter THEN
+	     EXPAND_TAC "B" THEN
+	     ASM_REWRITE_TAC[safety_complement];
+	   ALL_TAC
+	 ] THEN
+	 SUBGOAL_THEN `(S:(num->A)->bool) SUBSET Y` ASSUME_TAC THENL
+	 [
+	   EXPAND_TAC "S" THEN REWRITE_TAC[SUBSET; IN_INTERS; IN_ELIM_THM] THEN
+	     REWRITE_TAC[GSYM SUBSET] THEN GEN_TAC THEN
+	     DISCH_THEN (MP_TAC o SPEC `Y:(num->A)->bool`) THEN
+	     ASM_REWRITE_TAC[];
+	   ALL_TAC
+	 ] THEN
+	 SUBGOAL_THEN `B = {}:(num->A)->bool` MP_TAC THENL
+         [
+	   POP_ASSUM MP_TAC THEN EXPAND_TAC "Y" THEN
+	     UNDISCH_TAC `B SUBSET (S DIFF (P:(num->A)->bool))` THEN
+	     SET_TAC[];
+	   ALL_TAC
+	 ] THEN
+         REWRITE_TAC[GSYM MEMBER_NOT_EMPTY] THEN
+         EXISTS_TAC `concat i f g:num->A` THEN
+         EXPAND_TAC "B" THEN
+         REWRITE_TAC[IN_ELIM_THM] THEN
+         EXISTS_TAC `g:num->A` THEN
+         REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     EXPAND_TAC "L" THEN
+     SUBGOAL_THEN `P SUBSET (S:(num->A)->bool)` MP_TAC THENL
+     [
+       EXPAND_TAC "S" THEN SET_TAC[];
+       ALL_TAC
+     ] THEN
+     SET_TAC[]);;
+

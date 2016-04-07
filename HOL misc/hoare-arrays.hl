@@ -1,0 +1,322 @@
+load_path := "./ssreflect" :: !load_path;;
+needs "ssreflect/sections.hl";;
+needs "ssreflect/ssreflect.hl";;
+needs "ssreflect/Examples/seq-compiled.hl";;
+needs "ssreflect/Examples/seq2-compiled.hl";;
+
+needs "update_database.ml";;
+needs "Examples/prog.ml";;
+
+install_parser ("correct", parse_program_assertion);;
+
+let sorted = define `(sorted [] <=> T) /\ (sorted [h] <=> T)
+  /\ (sorted (CONS h1 (CONS h2 t)) <=> h1 <= h2 /\ sorted (CONS h2 t))`;;
+
+let sorted_cons = prove(`!t h. sorted (CONS h t) <=> 
+			  (t = [] \/ (h <= HD t /\ sorted t))`,
+	LIST_INDUCT_TAC THEN REWRITE_TAC[sorted; NOT_CONS_NIL; HD]);;
+
+let sorted_cons_alt = prove(`!t h. sorted (CONS h t) <=> sorted t /\ 
+			      (!i. i < LENGTH t ==> h <= EL i t)`,
+   LIST_INDUCT_TAC THEN REWRITE_TAC[sorted; LENGTH; Ssrnat.ltn0] THEN GEN_TAC THEN
+     EQ_TAC THEN STRIP_TAC THEN ASM_REWRITE_TAC[] THENL [
+       POP_ASSUM MP_TAC THEN ASM_REWRITE_TAC[] THEN STRIP_TAC THEN
+	 INDUCT_TAC THEN ASM_REWRITE_TAC[EL; HD; TL; LT_SUC] THEN
+	 ASM_MESON_TAC[LE_TRANS];
+       ALL_TAC
+     ] THEN
+     POP_ASSUM (MP_TAC o SPEC `0`) THEN
+     REWRITE_TAC[EL; HD; LT_0]);;
+
+let sorted_EL = prove(`!s i j. sorted s /\ i <= j /\ j < LENGTH s
+			==> EL i s <= EL j s`,
+   LIST_INDUCT_TAC THEN INDUCT_TAC THEN INDUCT_TAC THEN REWRITE_TAC[LENGTH; Ssrnat.ltn0; EL; HD; LE_REFL; TL; LT_SUC; LE_SUC] THENL [
+     REWRITE_TAC[sorted_cons_alt] THEN MESON_TAC[];
+     ARITH_TAC;
+     ALL_TAC
+   ] THEN
+     ASM_MESON_TAC[sorted_cons_alt]);;
+
+(* ex *)
+let ex_index = prove
+  (`correct
+     T
+     var i, x:A, s, f;
+     i := 0;
+     f := F;
+     while (i < LENGTH s /\ ~f) do [invariant (f ==> EL i s = x /\ i < LENGTH s)
+					;				        
+				    measure LENGTH s - i - if f then 1 else 0]
+	 (if (EL i s = x) then (f := T) else (i := i + 1))
+   end
+   (f ==> EL i s = x /\ i < LENGTH s)`,
+  VC_TAC THENL [
+    SIMP_TAC[];
+    REWRITE_TAC[DE_MORGAN_THM; NOT_LT] THEN
+      STRIP_TAC THEN ASM_SIMP_TAC[];
+    STRIP_TAC THEN ASM_SIMP_TAC[] THEN
+      ASM_ARITH_TAC;
+    STRIP_TAC THEN ASM_SIMP_TAC[] THEN
+      ASM_ARITH_TAC
+  ]);;
+
+(* Binary search *)
+let ex_binary_search = prove
+  (`correct
+     (sorted s) /\ MEM x s
+     var s, x, l, u, m;
+     l := 0;
+     u := LENGTH s - 1;
+     while (l < u) do [invariant sorted s /\ l <= u /\ u < LENGTH s /\ MEM x s /\
+			 (!i. i <= l ==> EL i s <= x) /\ 
+			 (!i. u <= i /\ i < LENGTH s ==> x <= EL i s);
+		       measure u - l]
+	 (m := (l + u) DIV 2;
+	  if (EL m s < x) then l := m + 1 else u := m)
+   end
+  (EL l s = x)`,
+  VC_TAC THENL [
+    REWRITE_TAC[MEM_EXISTS_EL] THEN
+      REPEAT STRIP_TAC THEN ASM_REWRITE_TAC[LE_0] THENL [
+	ASM_ARITH_TAC;
+	EXISTS_TAC `i:num` THEN ASM_REWRITE_TAC[];
+	MATCH_MP_TAC sorted_EL THEN ASM_REWRITE_TAC[] THEN ASM_ARITH_TAC;
+	MATCH_MP_TAC sorted_EL THEN ASM_REWRITE_TAC[] THEN ASM_ARITH_TAC;
+      ];
+    MESON_TAC[NOT_LT; LE_ANTISYM];
+    SIMP_TAC[] THEN REWRITE_TAC[MEM_EXISTS_EL] THEN
+      REPEAT STRIP_TAC THEN ASM_REWRITE_TAC[] THENL [
+	ASM_ARITH_TAC;
+	MATCH_MP_TAC sorted_EL THEN ASM_REWRITE_TAC[] THEN
+	  SUBGOAL_THEN `m < i` MP_TAC THENL [ ALL_TAC; ASM_ARITH_TAC ] THEN
+	  ASM_CASES_TAC `m < i` THEN ASM_REWRITE_TAC[] THEN
+	  UNDISCH_TAC `EL m s < x` THEN
+	  ASM_REWRITE_TAC[NOT_LT] THEN
+	  MATCH_MP_TAC sorted_EL THEN ASM_REWRITE_TAC[] THEN
+	  ASM_ARITH_TAC;
+	ASM_ARITH_TAC;
+      ];
+    SIMP_TAC[] THEN
+      REPEAT STRIP_TAC THEN ASM_REWRITE_TAC[] THENL [
+	ASM_ARITH_TAC;
+	ASM_ARITH_TAC;
+	MATCH_MP_TAC LE_TRANS THEN
+	  EXISTS_TAC `EL m s:num` THEN
+	  CONJ_TAC THENL [
+	    ASM_MESON_TAC[NOT_LT];
+	    ALL_TAC
+	  ] THEN
+	  MATCH_MP_TAC sorted_EL THEN ASM_REWRITE_TAC[];
+	ASM_ARITH_TAC
+      ]
+  ]);;
+
+
+
+
+let update = define `update [] i x = [] /\ 
+  update (CONS h t) 0 x = CONS x t /\ 
+  update (CONS h t) (SUC n) x = CONS h (update t n x)`;;
+
+let swap = new_definition `swap (s, i1, i2) = update (update s i1 (EL i2 s)) i2 (EL i1 s)`;;
+
+let el_update = prove(`!x s i. i < LENGTH s
+			==> EL i (update s i x) = x /\
+			    (!j. ~(j = i) ==> EL j (update s i x) = EL j s)`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[update; LENGTH; LT] THEN
+     INDUCT_TAC THEN REWRITE_TAC[update; EL; HD; TL] THENL [
+       DISCH_TAC THEN INDUCT_TAC THEN REWRITE_TAC[EL; TL];
+       ALL_TAC
+     ] THEN
+     DISCH_TAC THEN CONJ_TAC THENL [
+       FIRST_X_ASSUM (MP_TAC o SPEC `i:num`) THEN ANTS_TAC THENL [
+	 ASM_ARITH_TAC;
+	 ALL_TAC
+       ] THEN
+	 SIMP_TAC[];
+       ALL_TAC
+     ] THEN
+     INDUCT_TAC THEN REWRITE_TAC[EL; HD; TL; SUC_INJ] THEN
+     DISCH_TAC THEN FIRST_X_ASSUM (MP_TAC o SPEC `i:num`) THEN ANTS_TAC THENL [
+       ASM_ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     ASM_SIMP_TAC[]);;
+
+let length_update = prove(`!s i x. LENGTH (update s i x) = LENGTH s`,
+			  LIST_INDUCT_TAC THEN REWRITE_TAC[LENGTH; update] THEN
+			    INDUCT_TAC THEN ASM_REWRITE_TAC[update; LENGTH]);;
+
+let el_swap = prove(`!(s:(A)list) i j. i < LENGTH s /\ j < LENGTH s
+		      ==> EL i (swap (s, i, j)) = EL j s /\
+			  EL j (swap (s, i, j)) = EL i s /\
+			  (!k. ~(k = i) /\ ~(k = j) ==> EL k (swap (s, i, j)) = EL k s)`,
+   REWRITE_TAC[swap] THEN REPEAT GEN_TAC THEN STRIP_TAC THEN
+     ABBREV_TAC `t:(A)list = update s i (EL j s)` THEN
+     SUBGOAL_THEN `i < LENGTH (t:(A)list) /\ j < LENGTH t` ASSUME_TAC THENL [
+       ASM_MESON_TAC[length_update];
+       ALL_TAC
+     ] THEN
+     ASM_CASES_TAC `i = j:num` THENL [
+       ASM_MESON_TAC[el_update];
+       ASM_MESON_TAC[el_update]
+     ]);;
+
+let length_swap = prove(`!s i j. LENGTH (swap (s, i, j)) = LENGTH s`,
+			REWRITE_TAC[swap; length_update]);;
+
+let el_eq = prove(`!(s1:(A)list) s2. LENGTH s1 = LENGTH s2 /\ 
+    (!i. i < LENGTH s1 ==> EL i s1 = EL i s2)
+    ==> s1 = s2`,
+   LIST_INDUCT_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[LENGTH] THEN TRY ARITH_TAC THEN
+     REWRITE_TAC[SUC_INJ] THEN REPEAT STRIP_TAC THEN
+     REWRITE_TAC[injectivity "list"] THEN CONJ_TAC THENL [
+       FIRST_X_ASSUM (MP_TAC o SPEC `0`) THEN
+	 REWRITE_TAC[EL; LT_0; HD];
+       ALL_TAC
+     ] THEN
+     FIRST_X_ASSUM MATCH_MP_TAC THEN ASM_REWRITE_TAC[] THEN REPEAT STRIP_TAC THEN
+     FIRST_X_ASSUM (MP_TAC o SPEC `SUC i`) THEN
+     ASM_REWRITE_TAC[LT_SUC; EL; TL]);;
+     
+
+let swap_same = prove(`!(s:(A)list) i. i < LENGTH s ==> swap (s, i, i) = s`,
+   REPEAT STRIP_TAC THEN
+     MATCH_MP_TAC el_eq THEN
+     REWRITE_TAC[length_swap] THEN REPEAT STRIP_TAC THEN
+     ASM_CASES_TAC `i' = i:num` THEN ASM_SIMP_TAC[el_swap]);;
+       
+
+let count_same_update = prove(`!(x:A) s i. i < LENGTH s ==>
+	count (pred1 x) (update s i x) = (if EL i s = x then 0 else 1) + count (pred1 x) s`,
+   GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[LENGTH; LT] THEN
+     INDUCT_TAC THEN REWRITE_TAC[update; Seq.count; Seq.pred1; EL; HD; TL] THENL [
+       ASM_CASES_TAC `x = h:A` THEN ASM_REWRITE_TAC[] THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     DISCH_TAC THEN SUBGOAL_THEN `i < LENGTH (t:(A)list)` (LABEL_TAC "h") THENL [
+       ASM_ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     REMOVE_THEN "h" (fun th -> FIRST_X_ASSUM (MP_TAC o C MATCH_MP th)) THEN
+     ASM_SIMP_TAC[Seq.count; Seq.pred1] THEN 
+     ARITH_TAC);;
+
+let count_diff_update = prove(`!x (y:A) s i. i < LENGTH s /\ ~(x = y) ==>
+       count (pred1 y) (update s i x) = count (pred1 y) s - if EL i s = y then 1 else 0`,
+   GEN_TAC THEN GEN_TAC THEN LIST_INDUCT_TAC THEN REWRITE_TAC[LENGTH; LT] THEN
+     INDUCT_TAC THEN REWRITE_TAC[update; Seq.count; Seq.pred1; EL; HD; TL] THENL [
+       DISCH_TAC THEN ASM_CASES_TAC `y = h:A` THEN ASM_REWRITE_TAC[] THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     DISCH_TAC THEN SUBGOAL_THEN `i < LENGTH (t:(A)list) /\ ~(x = y:A)` (LABEL_TAC "h") THENL [
+       ASM_REWRITE_TAC[] THEN POP_ASSUM MP_TAC THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     USE_THEN "h" (fun th -> FIRST_X_ASSUM (MP_TAC o C MATCH_MP th)) THEN
+     ASM_SIMP_TAC[Seq.count; Seq.pred1] THEN
+     DISCH_THEN (fun th -> ALL_TAC) THEN
+     COND_CASES_TAC THEN REWRITE_TAC[ADD] THEN
+     COND_CASES_TAC THEN REWRITE_TAC[SUB_0] THEN
+     SUBGOAL_THEN `0 < count (\x:A. x = y) t` MP_TAC THENL [
+       REWRITE_TAC[GSYM Seq.has_count; GSYM Seq.hasP] THEN
+	 EXISTS_TAC `y:A` THEN REWRITE_TAC[] THEN
+	 EXPAND_TAC "y" THEN
+	 ASM_SIMP_TAC[MEM_EL];
+       ALL_TAC
+     ] THEN
+     ARITH_TAC);;
+
+
+let count_swap = prove(`!s i j (x:A). i < LENGTH s /\ j < LENGTH s
+			 ==> count (pred1 x) (swap (s, i, j)) = count (pred1 x) s`,
+   REPEAT STRIP_TAC THEN
+     ASM_CASES_TAC `i = j:num` THENL [
+       ASM_SIMP_TAC[swap_same];
+       ALL_TAC
+     ] THEN
+     REWRITE_TAC[swap] THEN ABBREV_TAC `t:(A)list = update s i (EL j s)` THEN
+     POP_ASSUM (LABEL_TAC "t") THEN
+     SUBGOAL_THEN `i < LENGTH (t:(A)list) /\ j < LENGTH t` ASSUME_TAC THENL [
+       ASM_MESON_TAC[length_update];
+       ALL_TAC
+     ] THEN
+     ASM_CASES_TAC `EL i s = x:A` THENL [
+       ASM_SIMP_TAC[count_same_update] THEN
+	 REMOVE_THEN "t" (fun th -> REWRITE_TAC[SYM th]) THEN
+	 ASM_CASES_TAC `EL j s = x:A` THENL [
+	   ASM_SIMP_TAC[count_same_update; el_update; ADD];
+	   ALL_TAC
+	 ] THEN
+	 ASM_SIMP_TAC[count_diff_update; el_update] THEN
+	   SUBGOAL_THEN `0 < count (pred1 (x:A)) s` MP_TAC THENL [ ALL_TAC; ARITH_TAC ] THEN
+	   REWRITE_TAC[GSYM Seq.has_count; GSYM Seq.hasP; Seq.pred1] THEN
+	   EXISTS_TAC `x:A` THEN REWRITE_TAC[] THEN
+	   EXPAND_TAC "x" THEN ASM_SIMP_TAC[MEM_EL];
+       ALL_TAC
+     ] THEN
+     ASM_SIMP_TAC[count_diff_update] THEN
+     REMOVE_THEN "t" (fun th -> REWRITE_TAC[SYM th]) THEN
+     ASM_CASES_TAC `EL j s = x:A` THENL [
+       ASM_SIMP_TAC[count_same_update; el_update] THEN ARITH_TAC;
+       ALL_TAC
+     ] THEN
+     ASM_SIMP_TAC[count_diff_update; el_update; SUB_0]);;
+
+let perm_eq_swap = prove(`!(s:(A)list) i j. i < LENGTH s /\ j < LENGTH s
+			   ==> perm_eq s (swap (s, i, j))`,
+   REWRITE_TAC[Seq2.perm_eq_pred1P] THEN SIMP_TAC[count_swap]);;
+
+
+let ex_bubble_sort = prove
+  (`correct
+     (A = A0)     
+     var A, n, s, i;
+     n := LENGTH A;
+     s := T;
+     while s do [invariant sorted (dropl n A) /\
+		   (~s ==> sorted A) /\
+		   (!k r. n <= k /\ k < LENGTH A0 /\ r < n ==> EL r A < EL k A) /\
+		perm_eq A A0;
+		 measure n]
+	 (s := F;
+	  i := 1;
+	  while i <= n - 1 do [invariant sorted (dropl n A) /\
+				 (!k r. n <= k /\ k < LENGTH A0 /\ r < n ==> EL r A < EL k A) /\
+				 (!k. k <= i - 1 ==> EL k A <= EL (i - 1) A) /\
+				 (~s ==> sorted (take i A)) /\
+				 perm_eq A A0;
+			       measure n - i]
+	      (if EL (i - 1) A > EL i A then
+		 (A := swap (A, i - 1, i);
+		  s := T)
+	       else
+		 i := i + 1);
+	    n := n - 1
+	 )
+   end
+  (sorted A /\ perm_eq A A0)`,
+  VC_TAC THEN SIMP_TAC[Seq.perm_eq_refl] THENL [
+    (* 1 *)
+    REWRITE_TAC[GSYM Seq.size; Seq.drop_size; sorted] THEN ARITH_TAC;
+    (* 2 *)
+    REPEAT STRIP_TAC THENL [
+      POP_ASSUM MP_TAC THEN SIMP_TAC[SUB_REFL; ARITH_RULE `k <= 0 <=> k = 0`; LE_REFL];
+      SPEC_TAC (`A:(num)list`, `t:(num)list`) THEN
+	LIST_INDUCT_TAC THEN REWRITE_TAC[Seq.take; ONE; sorted];
+    ];
+    (* 3 *)
+    REWRITE_TAC[NOT_LE] THEN STRIP_TAC THEN
+      SUBGOAL_TAC "le" `n <= i` [ ASM_ARITH_TAC ] THEN
+      REPEAT STRIP_TAC THENL [
+	
+	;
+	
+      
+      
+  ];;
+
+search[`take`];;
+search[`LENGTH`; `sizel`];;
+    
+search[`dropl`];;

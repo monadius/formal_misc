@@ -1,0 +1,121 @@
+needs "eval.hl";;
+needs "eval2.hl";;
+needs "test_eval.hl";;
+
+let reset() =
+  clear_tests();
+  Eval1.build_app_table();
+  Eval1.build_basic_app_table();
+  Eval2.build_app_table();;
+
+let compile() =
+  let ts = tests() in
+  let _ = construct_methods ts in
+    ts;;
+
+
+reset();;
+loadt "test_nonrec.hl";;
+let ts = tests();;
+
+add_method_to_tests 
+  (mk_method "Eval1.eval_simple_poly" (fun ths -> Eval1.eval1 (hd ths)))
+  ts;;
+
+add_method_to_tests 
+  (mk_method "Eval2.eval_simple_poly" (fun ths -> Eval2.build_eval_simple_poly (hd ths)))
+  ts;;
+
+add_method_to_tests 
+  (mk_method "Eval1.eval" (fun ths -> snd (Eval1.build_eval ths)))
+  ts;;
+
+add_method_to_tests 
+  (mk_method "Eval2.eval" (fun ths -> snd (Eval2.build_eval ths)))
+  ts;;
+
+let ts = compile();;
+run_tests Format.std_formatter ts;;
+
+
+let x = 2;;
+(********************************)
+
+(* eval 2 *)
+needs "eval2.hl";;
+
+Eval2.build_eval_simple_fixed;;
+
+let defs, eval_map = Eval2.build_eval [MAP];;
+let defs, eval_len = Eval2.build_eval [LENGTH];;
+
+eval_len [`[1;2;3]`];;
+eval_len [`[]`];;
+eval_map [`LENGTH:(num)list->num`; `[[0];[2;3]]`];;
+eval_map [`\x. 1 < x`; `[0;1;2;3]`];;
+
+eval_map [`SUC`; `[0;2;3]`];;
+ARITH_ADD;;
+
+add_basic_app `BIT0`;;
+add_basic_app `BIT1`;;
+add_basic_app `NUMERAL`;;
+
+let defs, eval_suc = Eval2.build_eval [ARITH_SUC];;
+eval_suc [`0`];;
+Eval2.find_all_apps "SUC";;
+Eval2.build_app_table();;
+
+eval_suc [`100`];;
+test 10000 NUM_SUC_CONV `SUC 1001`;;
+test 10000 eval_suc [`1001`];;
+
+let test_def = new_definition `test03 i j = if i < 2 then (if j < 3 then (if j < 3 then 1 else 3) else 2) else (if j < 3 then 4 else 1)`;;
+let ths = prepare_for_eval test_def;;
+let defs = map process_th ths;;
+let a_trees = map build_a_tree defs;;
+build_cond_tree a_trees;;
+
+let pc, f = eval2 ths;;
+f [`1`; `3`];;
+
+eval_cond
+
+let args = [`1`; `3`];;
+let pat, cond_tree = hd pc;;
+let inst_list, inst_ty = eval_p_trees pat args;;
+eval_cond_tree cond_tree inst_ty args;;
+
+find_compiled_thm;;
+
+
+let ths = [REWRITE_CONV [] `if T then (x:A) else y`;
+	   REWRITE_CONV [] `if F then (x:A) else y`];;
+let defs = map process_th ths;;
+
+(* eval 1 *)
+needs "eval.hl";;
+
+let defs, eval_map = Eval1.build_eval [MAP];;
+let def, f = Eval1.build_eval [LENGTH];;
+
+f [`[1;2;3]`];;
+
+eval_map [`LENGTH:(num)list->num`; `[[0];[2;3]]`];;
+eval_map [`\x. 1 < x`; `[0;1;2;3]`];;
+
+test 1000 eval_map [`SUC`; `[0;2;3]`];;
+ARITH_ADD;;
+
+add_basic_app `BIT0`;;
+add_basic_app `BIT1`;;
+add_basic_app `NUMERAL`;;
+
+let defs, eval_suc = build_eval [ARITH_SUC];;
+find_all_apps "SUC";;
+
+
+eval_suc [`100`];;
+test 10000 NUM_SUC_CONV `SUC 1001`;;
+test 10000 eval_suc [`1001`];;
+
