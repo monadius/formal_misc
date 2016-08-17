@@ -1,0 +1,535 @@
+remove_interface "**";;
+
+
+let REMOVE_ASSUM = POP_ASSUM (fun th -> ALL_TAC);;
+
+
+
+let is_group = new_definition
+  `is_group(g,( ** ),i,(e:A)) <=>
+    (e IN g) /\ (!x. x IN g ==> i(x) IN g) /\
+    (!x y. x IN g /\ y IN g ==> (x ** y) IN g) /\
+    (!x y z. x IN g /\ y IN g /\ z IN g ==> (x ** (y ** z) = (x ** y) ** z)) /\
+    (!x. x IN g ==> (x ** e = x) /\ (e ** x = x)) /\
+    (!x. x IN g ==> (x ** i(x) = e) /\ (i(x) ** x = e))`;;
+
+
+
+let is_subgroup = new_definition
+  `is_subgroup h (g,( ** ),i,(e:A)) <=> h SUBSET g /\ is_group(h,( ** ),i,e)`;;
+
+
+
+let exists_group = prove(`?G:((A->bool)#(A->A->A)#(A->A)#A). is_group G`,
+  SUBGOAL_THEN `?a. a IN (:A)` ASSUME_TAC THENL
+    [
+      SET_TAC[];
+      ALL_TAC
+    ] THEN
+
+    EXISTS_TAC `{a:A}, (\(x:A) (y:A). a), (\x:A. a), a` THEN
+    REWRITE_TAC[is_group] THEN
+    ASM SET_TAC[]);;
+
+
+(* Define group type *)
+let group_tybij = new_type_definition "group" ("group", "tuple_group") exists_group;;
+
+
+
+let group_set = new_definition(`!G:(A)group. group_set G = FST (tuple_group G)`);;
+
+
+
+let group_op = new_definition(`!G:(A)group. group_op G = FST(SND(tuple_group G))`);;
+
+
+
+let group_inv = new_definition(`!G:(A)group. group_inv G = FST(SND(SND(tuple_group G)))`);;
+
+
+
+let group_id = new_definition(`!G:(A)group. group_id G = SND(SND(SND(tuple_group G)))`);;
+
+
+
+let in_group = new_definition(`!G:((A)group) (g:A). IN_GROUP g G <=> g IN group_set G`);;
+
+
+
+
+remove_interface "IN";;
+make_overloadable "IN" `:A -> B -> bool`;;
+overload_interface("IN", `IN`);;
+overload_interface("IN", `IN_GROUP`);;
+
+
+let IS_GROUP = prove(`!G. is_group (group_set G, group_op G, group_inv G, group_id G)`,
+  REWRITE_TAC[group_set; group_op; group_inv; group_id] THEN
+    MESON_TAC[group_tybij]);;
+
+
+
+(* Very simple tactics for proving trivial theorems about groups *)
+let GROUP_TAC_SIMP = REPEAT GEN_TAC THEN REWRITE_TAC[in_group] THEN 
+                       TRY LET_TAC THEN
+                       MP_TAC (ISPEC `G:(A)group` IS_GROUP) THEN ASM_SIMP_TAC[is_group];
+
+
+
+let GROUP_ID_IN_GROUP = prove(`!G:(A)group. let e = group_id G in e IN G`,
+			      GROUP_TAC_SIMP);;
+
+
+let GROUP_INV_IN_GROUP = prove(`!(G:(A)group) x. x IN G ==>
+				 let i = group_inv G in i x IN G`,
+			       GROUP_TAC_SIMP);;
+
+
+let GROUP_MUL_IN_GROUP = prove(`!(G:(A)group) x y. x IN G /\ y IN G ==>
+				 let (**) = group_op G in x ** y IN G`,
+			       GROUP_TAC_SIMP);;
+
+
+
+(* Subgroup *)
+parse_as_infix ("SUBGROUP", (14, "right"));;
+
+
+let subgroup = new_definition `H SUBGROUP G <=> group_set H SUBSET group_set G /\ group_op H = group_op G`;;
+
+
+
+
+(* Normal subgroup *)
+parse_as_infix("NORMAL", (14, "right"));;
+
+
+let normal = new_definition `N NORMAL G <=> N SUBGROUP G /\ 
+  (!g n. g IN G /\ n IN N ==> group_op G g (group_op G n (group_inv G g)) IN N)`;;
+
+
+
+
+
+(* coset = left coset *)
+let coset = new_definition `!G H g. coset g (G,H) = IMAGE (group_op G g) (group_set H)`;;
+
+
+let cosets = new_definition `cosets (G,H) = {coset g (G,H) | g | g IN G}`;;
+
+
+
+
+
+let GROUP_OP_ASSOC = prove(`!G:((A)group) x y z. x IN G /\ y IN G /\ z IN G ==>
+			     let (**) = group_op G in
+			       x ** y ** z = (x ** y) ** z`,
+			   GROUP_TAC_SIMP);;
+
+
+
+let GROUP_MUL_LINV = prove(`!G:((A)group) x. x IN G ==> 
+   (let i = group_inv G and (**) = group_op G and e = group_id G in i x ** x = e)`,
+			  GROUP_TAC_SIMP);;
+
+
+let GROUP_MUL_RINV = prove(`!(G:(A)group) x. x IN G ==> 
+   (let i = group_inv G and (**) = group_op G and e = group_id G in x ** i x = e)`, 
+			   GROUP_TAC_SIMP);;
+
+
+let GROUP_MUL_LID = prove(`!(G:(A)group) x. x IN G ==>
+   (let (**) = group_op G and e = group_id G in e ** x = x)`,
+			  GROUP_TAC_SIMP);;
+
+
+
+let GROUP_MUL_RID = prove(`!(G:(A)group) x. x IN G ==>
+   (let (**) = group_op G and e = group_id G in x ** e = x)`,
+			  GROUP_TAC_SIMP);;
+
+
+
+
+let let_RULE = fun th -> REWRITE_RULE[DEPTH_CONV let_CONV (concl th)] th;;
+
+
+let GROUP_SIMP_TAC th = MP_TAC (let_RULE (SPEC `G:(A)group` th)) THEN
+                        ASM_REWRITE_TAC[] THEN
+                        DISCH_THEN (fun th -> ASM_SIMP_TAC[th]);;
+
+
+let GROUP_CANCEL_RMUL = prove(`!(G:(A)group) x y a. x IN G /\ y IN G /\ a IN G ==> 
+   (let (**) = group_op G in x ** a = y ** a <=> x = y)`,
+     REPEAT STRIP_TAC THEN LET_TAC THEN
+       ABBREV_TAC `(i:A->A) = group_inv G` THEN
+       EQ_TAC THENL
+       [
+	 DISCH_THEN (MP_TAC o (fun th -> AP_TERM `(\x. x ** ((i:A->A) a)):(A->A)` th)) THEN
+	   BETA_TAC THEN
+	   MP_TAC (let_RULE (SPECL [`G:(A)group`; `a:A`] GROUP_INV_IN_GROUP)) THEN
+	   ASM_REWRITE_TAC[] THEN
+	   DISCH_TAC THEN
+
+	   GROUP_SIMP_TAC (GSYM GROUP_OP_ASSOC) THEN
+ 	   GROUP_SIMP_TAC GROUP_MUL_RINV THEN
+	   GROUP_SIMP_TAC GROUP_MUL_RID;
+
+	 DISCH_THEN (MP_TAC o (fun th -> AP_TERM `(\x. x ** (a:A)):(A->A)` th)) THEN
+	   BETA_TAC THEN
+	   SIMP_TAC[]
+       ]);;
+
+
+
+let GROUP_CANCEL_LMUL = prove(`!(G:(A)group) x y a. x IN G /\ y IN G /\ a IN G ==> 
+   (let (**) = group_op G in a ** x = a ** y <=> x = y)`,
+     REPEAT STRIP_TAC THEN LET_TAC THEN
+       ABBREV_TAC `(i:A->A) = group_inv G` THEN
+       EQ_TAC THENL
+       [
+	 DISCH_THEN (MP_TAC o (fun th -> AP_TERM `((**):A->A->A) ((i:A->A) a)` th)) THEN
+	   MP_TAC (let_RULE (SPECL [`G:(A)group`; `a:A`] GROUP_INV_IN_GROUP)) THEN
+	   ASM_REWRITE_TAC[] THEN
+	   DISCH_TAC THEN
+
+	   GROUP_SIMP_TAC GROUP_OP_ASSOC THEN
+ 	   GROUP_SIMP_TAC GROUP_MUL_LINV THEN
+	   GROUP_SIMP_TAC GROUP_MUL_LID;
+
+	 DISCH_THEN (MP_TAC o (fun th -> AP_TERM `((**):A->A->A) a` th)) THEN
+	   SIMP_TAC[]
+       ]);;
+
+
+
+let GROUP_CANCEL_LMUL_IMP = prove(`!(G:(A)group) x y a. let (**) = group_op G in 
+	x IN G /\ y IN G /\ a IN G /\ a ** x = a ** y ==> x = y`,
+  REPEAT GEN_TAC THEN LET_TAC THEN
+    MP_TAC (let_RULE (SPEC `G:(A)group` GROUP_CANCEL_LMUL)) THEN
+    ASM_REWRITE_TAC[] THEN
+    MESON_TAC[]);;
+
+
+
+let GROUP_CANCEL_RMUL_IMP = prove(`!(G:(A)group) x y a. let (**) = group_op G in 
+	x IN G /\ y IN G /\ a IN G /\ x ** a = y ** a ==> x = y`,
+  REPEAT GEN_TAC THEN LET_TAC THEN
+    MP_TAC (let_RULE (SPEC `G:(A)group` GROUP_CANCEL_RMUL)) THEN
+    ASM_REWRITE_TAC[] THEN
+    MESON_TAC[]);;
+
+
+
+
+
+
+let GROUP_ID_UNIQUE = prove(`!(G:(A)group) x e'. let (**) = group_op G and e = group_id G in
+	      e' IN G /\ x IN G /\ (x ** e' = x \/ e' ** x = x) ==> e' = e`,
+ REPEAT GEN_TAC THEN 
+   MP_TAC (let_RULE (SPEC `G:(A)group` GROUP_ID_IN_GROUP)) THEN
+   LET_TAC THEN
+   REPEAT STRIP_TAC THENL
+   [
+     MP_TAC (ISPECL [`G:(A)group`; `e':A`; `e:A`; `x:A`] GROUP_CANCEL_LMUL) THEN
+       ASM_REWRITE_TAC[] THEN LET_TAC THEN
+       GROUP_SIMP_TAC GROUP_MUL_RID;
+
+     MP_TAC (SPECL [`G:(A)group`; `e':A`; `e:A`; `x:A`] GROUP_CANCEL_RMUL) THEN
+       ASM_REWRITE_TAC[] THEN LET_TAC THEN
+       GROUP_SIMP_TAC GROUP_MUL_LID
+   ]);;
+			      
+
+
+let GROUP_INV_UNIQUE = prove(`!(G:(A)group) x y. let i = group_inv G and e = group_id G and (**) = group_op G in
+	x IN G /\ y IN G /\ (x ** y = e \/ y ** x = e) ==> y = i x`,
+   REPEAT GEN_TAC THEN LET_TAC THEN
+     MP_TAC (let_RULE (SPEC `G:(A)group` GROUP_ID_IN_GROUP)) THEN ASM_REWRITE_TAC[] THEN
+     REPEAT STRIP_TAC THEN  MP_TAC (let_RULE (SPECL [`G:(A)group`; `x:A`] GROUP_INV_IN_GROUP)) THEN ASM_REWRITE_TAC[] THEN DISCH_TAC THENL
+     [
+       MATCH_MP_TAC (let_RULE GROUP_CANCEL_LMUL_IMP) THEN
+	 EXISTS_TAC `G:(A)group` THEN
+	 EXISTS_TAC `x:A` THEN
+	 ASM_REWRITE_TAC[] THEN
+	 GROUP_SIMP_TAC GROUP_MUL_RINV;
+       MATCH_MP_TAC (let_RULE GROUP_CANCEL_RMUL_IMP) THEN
+	 EXISTS_TAC `G:(A)group` THEN
+	 EXISTS_TAC `x:A` THEN
+	 ASM_REWRITE_TAC[] THEN
+	 GROUP_SIMP_TAC GROUP_MUL_LINV
+     ]);;
+     
+
+
+
+let SUBGROUP_ID = prove(`!G H:(A)group. H SUBGROUP G ==> group_id H = group_id G`, 
+			REWRITE_TAC[subgroup] THEN
+			  REPEAT STRIP_TAC THEN
+			  ABBREV_TAC `e':A = group_id H` THEN
+			  MATCH_MP_TAC (let_RULE GROUP_ID_UNIQUE) THEN
+			  EXISTS_TAC `e':A` THEN
+			  MP_TAC (let_RULE (SPEC `H:(A)group` GROUP_ID_IN_GROUP)) THEN
+			  ASM_REWRITE_TAC[] THEN DISCH_TAC THEN
+			  SUBGOAL_THEN `e' IN (G:(A)group)` ASSUME_TAC THENL
+			  [
+			    POP_ASSUM MP_TAC THEN
+			      REWRITE_TAC[in_group] THEN
+			      ASM SET_TAC[];
+			    ALL_TAC
+			  ] THEN
+			  ASM_REWRITE_TAC[] THEN
+			  REMOVE_ASSUM THEN 
+			  REPLICATE_TAC 2 (POP_ASSUM MP_TAC) THEN
+			  POP_ASSUM (fun th -> REWRITE_TAC[SYM th]) THEN
+			  DISCH_TAC THEN DISCH_TAC THEN
+			  MP_TAC (let_RULE (SPECL [`H:(A)group`; `e':A`] GROUP_MUL_LID)) THEN
+			  ASM_SIMP_TAC[]);;
+
+
+
+let SUBGROUP_INV = prove(`!G H (h:A). H SUBGROUP G /\ h IN H ==> group_inv H h = group_inv G h`,
+  REWRITE_TAC[subgroup] THEN
+    REPEAT STRIP_TAC THEN
+    ABBREV_TAC `y:A = group_inv H h` THEN
+    MATCH_MP_TAC (let_RULE GROUP_INV_UNIQUE) THEN
+    SUBGOAL_THEN `h IN (G:(A)group)` ASSUME_TAC THENL
+    [
+      ASM SET_TAC[in_group];
+      ALL_TAC
+    ] THEN
+    SUBGOAL_THEN `y IN (G:(A)group)` ASSUME_TAC THENL
+    [
+      MP_TAC (let_RULE (SPECL [`H:(A)group`; `h:A`] GROUP_INV_IN_GROUP)) THEN
+	ASM SET_TAC[in_group];
+      ALL_TAC
+    ] THEN
+
+    ASM_REWRITE_TAC[] THEN
+    DISJ1_TAC THEN
+    MP_TAC (let_RULE (SPECL [`H:(A)group`; `h:A`] GROUP_MUL_RINV)) THEN
+    ASM_SIMP_TAC[] THEN
+    ASM_MESON_TAC[SUBGROUP_ID; subgroup]);;
+
+
+
+
+
+
+let GROUP_MUL_INV = prove(`!(G:(A)group) x y. let (**) = group_op G and i = group_inv G in
+			    x IN G /\ y IN G ==> i(x ** y) = i(y) ** i(x)`,
+  REPEAT GEN_TAC THEN LET_TAC THEN
+    STRIP_TAC THEN
+    MP_TAC (let_RULE (SPECL [`G:(A)group`; `x:A`] GROUP_INV_IN_GROUP)) THEN
+    MP_TAC (let_RULE (SPECL [`G:(A)group`; `y:A`] GROUP_INV_IN_GROUP)) THEN
+    MP_TAC (let_RULE (SPECL [`G:(A)group`; `x:A`; `y:A`] GROUP_MUL_IN_GROUP)) THEN
+    ASM_REWRITE_TAC[] THEN REPEAT STRIP_TAC THEN
+    MP_TAC (SPEC `G:(A)group` GROUP_ID_IN_GROUP) THEN
+    LET_TAC THEN DISCH_TAC THEN
+
+    EXPAND_TAC "i" THEN
+    MATCH_MP_TAC (let_RULE (GSYM GROUP_INV_UNIQUE)) THEN
+    ASM_REWRITE_TAC[] THEN REPEAT STRIP_TAC THENL
+    [
+      GROUP_SIMP_TAC GROUP_MUL_IN_GROUP;
+      DISJ1_TAC THEN
+	MP_TAC (let_RULE (SPECL [`G:(A)group`; `((x:A) ** (y:A)):A`; `(i:A->A) y`; `(i:A->A) x`] GROUP_OP_ASSOC)) THEN
+	ASM_REWRITE_TAC[] THEN
+	DISCH_THEN (fun th -> REWRITE_TAC[th]) THEN
+	MP_TAC (let_RULE (SPECL [`G:(A)group`; `x:A`; `y:A`; `(i:A->A) y`] GROUP_OP_ASSOC)) THEN
+	ASM_REWRITE_TAC[] THEN
+	DISCH_THEN (fun th -> REWRITE_TAC[SYM th]) THEN
+	GROUP_SIMP_TAC GROUP_MUL_RINV THEN
+	GROUP_SIMP_TAC GROUP_MUL_RID THEN
+	GROUP_SIMP_TAC GROUP_MUL_RINV
+    ]);;
+
+
+ 
+
+
+let BELONG_COSET = prove(`!G H g x. x IN coset g (G, H) <=> 
+			   (?h. h IN H /\ x = group_op G g h)`,
+			 REWRITE_TAC[coset; IMAGE; in_group; IN_ELIM_THM]);;
+
+
+
+
+
+let BELONG_SAME_COSET = prove(`!(G:(A)group) H g x y. 
+	g IN G /\ H SUBGROUP G /\ x IN coset g (G,H) /\ y IN coset g (G,H) ==> 
+	let (**) = group_op G and i = group_inv G in
+	  i(x) ** y IN H`,
+ REPEAT GEN_TAC THEN LET_TAC THEN
+   REWRITE_TAC[subgroup; BELONG_COSET] THEN
+   ASM_REWRITE_TAC[] THEN
+   REPEAT STRIP_TAC THEN
+   ASM_REWRITE_TAC[] THEN
+   SUBGOAL_THEN `h IN (G:(A)group) /\ h' IN (G:(A)group)` ASSUME_TAC THENL
+   [
+     ASM SET_TAC[in_group];
+     ALL_TAC 
+   ] THEN
+   GROUP_SIMP_TAC GROUP_MUL_INV THEN
+   MP_TAC (let_RULE (SPECL [`G:(A)group`; `h:A`] GROUP_INV_IN_GROUP)) THEN
+   MP_TAC (let_RULE (SPECL [`G:(A)group`; `h':A`] GROUP_INV_IN_GROUP)) THEN
+   MP_TAC (let_RULE (SPECL [`G:(A)group`; `g:A`] GROUP_INV_IN_GROUP)) THEN
+   MP_TAC (let_RULE (SPECL [`G:(A)group`; `g:A`; `h':A`] GROUP_MUL_IN_GROUP)) THEN
+   ASM_REWRITE_TAC[] THEN REPEAT DISCH_TAC THEN
+
+   GROUP_SIMP_TAC (GSYM GROUP_OP_ASSOC) THEN   
+   MP_TAC (let_RULE (SPECL [`G:(A)group`; `(i:A->A) g`; ` g:A`; `h':A`] GROUP_OP_ASSOC)) THEN
+   ASM_REWRITE_TAC[] THEN
+   DISCH_THEN (fun th -> REWRITE_TAC[th]) THEN
+   GROUP_SIMP_TAC GROUP_MUL_LINV THEN
+   GROUP_SIMP_TAC GROUP_MUL_LID THEN
+   EXPAND_TAC "**" THEN
+   MATCH_MP_TAC (let_RULE GROUP_MUL_IN_GROUP) THEN
+   ASM_REWRITE_TAC[] THEN
+   MP_TAC (let_RULE (SPECL [`G:(A)group`; `H:(A)group`; `h:A`] SUBGROUP_INV)) THEN
+   ASM_REWRITE_TAC[subgroup] THEN
+   SIMP_TAC[] THEN
+   MP_TAC (let_RULE (SPECL [`H:(A)group`; `h:A`] GROUP_INV_IN_GROUP)) THEN
+   ASM_MESON_TAC[]);;
+
+
+
+
+
+
+
+let SUBGROUP_COSETS = prove(`!(G:(A)group) H a b. H SUBGROUP G /\ a IN cosets (G,H) /\ b IN cosets (G,H) ==> a = b \/ DISJOINT a b`,
+   REPEAT GEN_TAC THEN
+     REWRITE_TAC[subgroup; cosets; IN_ELIM_THM] THEN
+     REPEAT STRIP_TAC THEN
+     DISJ_CASES_TAC (SET_RULE `DISJOINT (a:A->bool) b \/ ?x. x IN (a INTER b)`) THENL
+     [
+       ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     DISJ1_TAC THEN
+     ABBREV_TAC `(**) = group_op (G:(A)group)` THEN
+     ABBREV_TAC `i = group_inv (G:(A)group)` THEN
+     ABBREV_TAC `e = group_id (G:(A)group)` THEN
+     REWRITE_TAC[EXTENSION] THEN GEN_TAC THEN EQ_TAC THENL
+     [
+       FIRST_X_ASSUM (X_CHOOSE_THEN `y:A` MP_TAC) THEN
+	 ASM_REWRITE_TAC[IN_INTER; BELONG_COSET] THEN
+	 REPEAT STRIP_TAC THEN
+	 EXISTS_TAC `((h':A) ** (i:A->A) h ** h''):A` THEN
+	 SUBGOAL_THEN `((h':A) ** (i:A->A) h ** h''):A IN H` ASSUME_TAC THENL
+	 [
+	   EXPAND_TAC "**" THEN
+	   MATCH_MP_TAC (let_RULE GROUP_MUL_IN_GROUP)
+	 ]
+
+
+
+
+
+
+	 ASM_REWRITE_TAC[] THEN
+	 SUBGOAL_THEN `g:A = (g':A) ** (h':A) ** (i:A->A) h` (fun th -> REWRITE_TAC[th]) THENL
+	 [
+	   MP_TAC (GSYM (ISPECL [`G:A->bool`; `(**):A->A->A`; `i:A->A`; `e:A`; `g':A`; `h':A`; `(i:A->A) h`] GROUP_MUL_ASSOC)) THEN
+	     SUBGOAL_TAC "A" `h':A IN G /\ (i:A->A) h IN G` [ ASM_MESON_TAC [SUBSET; group] ] THEN
+	     ASM_REWRITE_TAC[] THEN
+	     DISCH_THEN (fun th -> REWRITE_TAC[th]) THEN
+	     REPLICATE_TAC 4 (POP_ASSUM (fun th -> ALL_TAC)) THEN
+	     POP_ASSUM (fun th -> REWRITE_TAC[SYM th]) THEN
+	     ASM_REWRITE_TAC[] THEN
+	     ASM_MESON_TAC[SUBSET; group];
+
+	   ALL_TAC
+	 ] THEN
+
+	 SUBGOAL_TAC "A" `(h':A) IN G /\ (i:A->A) h IN G /\ h'' IN G` [ ASM_MESON_TAC[SUBSET; group] ] THEN
+	 REMOVE_THEN "A" MP_TAC THEN
+	 REPLICATE_TAC 8 (POP_ASSUM (fun th -> ALL_TAC)) THEN
+	 POP_ASSUM MP_TAC THEN POP_ASSUM (fun th -> ALL_TAC) THEN
+	 POP_ASSUM MP_TAC THEN
+	 REPLICATE_TAC 2 (POP_ASSUM (fun th -> ALL_TAC)) THEN
+	 POP_ASSUM MP_TAC THEN
+	 MESON_TAC[group];
+
+
+       POP_ASSUM (X_CHOOSE_THEN `y:A` MP_TAC) THEN
+	 ASM_REWRITE_TAC[IN_INTER; BELONG_COSET] THEN
+	 REPEAT STRIP_TAC THEN
+	 EXISTS_TAC `((h:A) ** (i:A->A) h' ** h''):A` THEN
+	 SUBGOAL_TAC "A" `((h:A) ** (i:A->A) h' ** h''):A IN H` [ ASM_MESON_TAC [group] ] THEN
+	 ASM_REWRITE_TAC[] THEN
+	 SUBGOAL_THEN `g':A = (g:A) ** (h:A) ** (i:A->A) h'` (fun th -> REWRITE_TAC[th]) THENL
+	 [
+	   MP_TAC (GSYM (ISPECL [`G:A->bool`; `(**):A->A->A`; `i:A->A`; `e:A`; `g:A`; `h:A`; `(i:A->A) h'`] GROUP_MUL_ASSOC)) THEN
+	     SUBGOAL_TAC "A" `h:A IN G /\ (i:A->A) h' IN G` [ ASM_MESON_TAC [SUBSET; group] ] THEN
+	     ASM_REWRITE_TAC[] THEN
+	     DISCH_THEN (fun th -> REWRITE_TAC[th]) THEN
+	     REPLICATE_TAC 4 (POP_ASSUM (fun th -> ALL_TAC)) THEN
+	     POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN
+	     POP_ASSUM (fun th -> REWRITE_TAC[SYM th]) THEN
+	     REPEAT STRIP_TAC THEN
+	     ASM_REWRITE_TAC[] THEN
+	     ASM_MESON_TAC[SUBSET; group];
+
+	   ALL_TAC
+	 ] THEN
+
+	 SUBGOAL_TAC "A" `(h:A) IN G /\ (i:A->A) h' IN G /\ h'' IN G` [ ASM_MESON_TAC[SUBSET; group] ] THEN
+	 REMOVE_THEN "A" MP_TAC THEN
+	 REPLICATE_TAC 8 (POP_ASSUM (fun th -> ALL_TAC)) THEN
+	 POP_ASSUM MP_TAC THEN POP_ASSUM (fun th -> ALL_TAC) THEN
+	 POP_ASSUM MP_TAC THEN
+	 REPLICATE_TAC 2 (POP_ASSUM (fun th -> ALL_TAC)) THEN
+	 POP_ASSUM MP_TAC THEN
+	 MESON_TAC[group]
+     ]);;
+
+
+
+let GROUP_NOT_EMPTY = prove(`!G (**) i (e:A). group (G,(**),i,e) ==> ~(G = {})`,
+ REWRITE_TAC[group] THEN
+ MESON_TAC[NOT_IN_EMPTY]);;
+
+
+
+let COSET_PARTITION = prove(`!G H (**) i (e:A). group (G,(**),i,e) /\ subgroup H (G,(**),i,e) ==> G = UNIONS (cosets (G,(**),i,e) H) /\ (!a b. a IN cosets (G,(**),i,e) H /\ b IN cosets (G,(**),i,e) H /\ ~(a = b) ==> DISJOINT a b)`,
+ REPEAT STRIP_TAC THENL
+ [
+   POP_ASSUM MP_TAC THEN REWRITE_TAC[subgroup] THEN STRIP_TAC THEN
+   REWRITE_TAC[EXTENSION; IN_UNIONS; cosets; IN_ELIM_THM] THEN
+     GEN_TAC THEN EQ_TAC THENL
+     [
+       DISCH_TAC THEN
+	 EXISTS_TAC `IMAGE (((**):A->A->A) x) H` THEN
+	 REWRITE_TAC[IN_IMAGE] THEN
+	 CONJ_TAC THENL
+	 [
+	   EXISTS_TAC `x:A` THEN
+	     ASM_REWRITE_TAC[];
+	   EXISTS_TAC `e:A` THEN
+	     ASM_MESON_TAC[group]
+	 ];
+
+       ALL_TAC
+     ] THEN
+     STRIP_TAC THEN
+     POP_ASSUM MP_TAC THEN
+     FIRST_X_ASSUM (ASSUME_TAC o SPEC `x:A`) THEN
+     ASM_REWRITE_TAC[] THEN
+     REWRITE_TAC[IN_IMAGE] THEN
+     ASM_MESON_TAC[SUBSET; group];
+
+   ASM_MESON_TAC[SUBGROUP_COSETS]
+ ]);;
+
+
+
+let FINITE_INDEX = prove(`!G H (**) i (e:A). FINITE G /\ subgroup H (G,(**),i,e) ==> ?m. cosets (G,(**),i,e) H HAS_SIZE m`,
+ REWRITE_TAC[subgroup; cosets] THEN
+   REPEAT STRIP_TAC
+
+
+let LAGRANGE_ALT = prove(`!G H (**) i (e:A) n m. group (G,(**),i,e) /\ subgroup H (G,(**),i,e) /\ H HAS_SIZE n /\ 
+   

@@ -1,0 +1,184 @@
+let lemma = prove(`!V E. FAN (vec 0,V,E) ==> inverse (n_fan_pair_ext (V,E)) (v,w) = 
+		      if (v,w) IN dart1_of_fan (V,E) then (v, inverse_sigma_fan (vec 0) V E v w) else (v,w)`,
+   REWRITE_TAC[inverse; n_fan_pair_ext]
+     REPEAT STRIP_TAC THEN
+     MATCH_MP_TAC CHOICE_LEMMA THEN
+     POP_ASSUM (MP_TAC o (fun th -> MATCH_MP N_FAN_PAIR_EXT_PERMUTES_DART1_OF_FAN th)) THEN
+     DISCH_TAC THEN
+     SUBGOAL_THEN `!a:real^3#real^3. a IN dart1_of_fan (V,E) ==> n_fan_pair (V,E) a IN dart1_of_fan (V,E)` MP_TAC THENL
+     [
+       GEN_TAC THEN
+	 POP_ASSUM (MP_TAC o (fun th -> MATCH_MP PERMUTES_INSIDE th)) THEN
+	 SIMP_TAC[n_fan_pair_ext];
+       ALL_TAC
+     ] THEN
+
+     POP_ASSUM MP_TAC THEN
+     REWRITE_TAC[permutes; n_fan_pair_ext] THEN
+     SIMP_TAC[] THEN
+     DISCH_THEN (MP_TAC o SPEC `v:real^3,w:real^3`) THEN
+     REWRITE_TAC[EXISTS_UNIQUE] THEN
+     REPEAT STRIP_TAC THENL
+     [
+       ASM_MESON_TAC[];
+       ALL_TAC
+     ] THEN
+     REWRITE_TAC[Fan.inverse_sigma_fan] THEN
+     POP_ASSUM MP_TAC THEN
+     DISJ_CASES_TAC (TAUT `~(x':real^3#real^3 IN dart1_of_fan (V,E)) \/ x' IN dart1_of_fan (V,E)`) THENL
+     [
+       ASM_REWRITE_TAC[] THEN
+	 DISCH_THEN (fun th -> REWRITE_TAC[SYM th]) THEN
+	 ASM_REWRITE_TAC[];
+       ALL_TAC
+     ] THEN
+     ASM_REWRITE_TAC[] THEN
+     DISCH_TAC THEN
+     SUBGOAL_THEN `v:real^3,w:real^3 IN dart1_of_fan(V,E)` ASSUME_TAC THENL
+     [
+       ASM_MESON_TAC[];
+       ALL_TAC
+     ] THEN
+     
+     ASM_REWRITE_TAC[] THEN
+
+     SUBGOAL_THEN `x = x':real^3#real^3` MP_TAC THENL
+     [
+       ASM_MESON_TAC[];
+       ALL_TAC
+     ] THEN
+     POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN POP_ASSUM MP_TAC THEN
+     REMOVE_ASSUM THEN
+     MP_TAC (ISPEC `x':real^3#real^3` PAIR_SURJECTIVE) THEN
+     DISCH_THEN (X_CHOOSE_THEN `p:real^3` MP_TAC) THEN
+     DISCH_THEN (X_CHOOSE_THEN `q:real^3` MP_TAC) THEN
+     DISCH_THEN (fun th -> REWRITE_TAC[th; n_fan_pair]) THEN
+     SIMP_TAC[PAIR_EQ] THEN
+     REPEAT STRIP_TAC THEN
+     
+     MATCH_MP_TAC (GSYM CHOICE_LEMMA) THEN
+     CONJ_TAC THENL
+     [
+       ASM_MESON_TAC[];
+       ALL_TAC
+     ] THEN
+     GEN_TAC THEN
+     DISCH_TAC THEN
+     SUBGOAL_THEN `v:real^3,a:real^3 IN dart1_of_fan (V,E)` ASSUME_TAC THENL
+     [
+       POP_ASSUM MP_TAC THEN
+	 REWRITE_TAC[Fan.sigma_fan] THEN
+	 REMOVE_ASSUM THEN POP_ASSUM MP_TAC THEN
+	 
+
+
+	 REWRITE_TAC[dart1_of_fan; IN_ELIM_THM; Fan.set_of_edge]
+	 ANTS_TAC THENL
+     ]
+
+     FIRST_X_ASSUM (MP_TAC o SPEC `v:real^3,a:real^3`) THEN
+     
+     
+       
+
+
+     ASM_MESON_TAC[n_fan_pair; PAIR_EQ]
+
+
+
+
+
+
+
+
+
+
+let INVERSE_SIGMA_FAN_IS_INVERSE = prove(`!V E. FAN (vec 0,V,E) ==> (!v w. (v,w) IN dart1_of_fan (V,E) ==> sigma_fan (vec 0) V E v (new_inverse_sigma_fan (vec 0) V E v w) = w)`,
+   REPEAT STRIP_TAC THEN
+     SUBGOAL_THEN `w:real^3 IN set_of_edge v V E /\ {v,w} IN E` STRIP_ASSUME_TAC THENL
+     [
+       CONJ_TAC THENL [ ASM_MESON_TAC[IN_SET_OF_EDGE; Fan.FAN]; ALL_TAC] THEN
+	 POP_ASSUM MP_TAC THEN REWRITE_TAC[dart1_of_fan; IN_ELIM_THM; PAIR_EQ] THEN
+	 MESON_TAC[];
+       ALL_TAC
+     ] THEN
+
+     MP_TAC (SPECL [`(vec 0):real^3`; `V:real^3->bool`; `E:(real^3->bool)->bool`; `v:real^3`; `w:real^3`] Fan.permutes_sigma_fan) THEN
+     ASM_REWRITE_TAC[] THEN
+     DISCH_TAC THEN
+     REWRITE_TAC[new_inverse_sigma_fan] THEN
+     MATCH_MP_TAC INVERSE_LEMMA THEN
+     POP_ASSUM MP_TAC THEN
+     REWRITE_TAC[Fan.extension_sigma_fan; permutes] THEN
+     SIMP_TAC[] THEN
+     DISCH_THEN (MP_TAC o SPEC `w:real^3`) THEN
+
+     REWRITE_TAC[EXISTS_UNIQUE] THEN
+     REPEAT STRIP_TAC THEN
+     EXISTS_TAC `x:real^3` THEN
+     DISJ_CASES_TAC (TAUT `~(x:real^3 IN set_of_edge v V E) \/ x IN set_of_edge v V E`) THENL
+     [
+       FIRST_X_ASSUM (MP_TAC o check (is_eq o concl)) THEN
+	 ASM_REWRITE_TAC[] THEN
+	 ASM_MESON_TAC[];
+       ALL_TAC
+     ] THEN
+
+     FIRST_X_ASSUM (MP_TAC o check (is_eq o concl)) THEN
+     ASM_REWRITE_TAC[] THEN SIMP_TAC[] THEN
+     DISCH_THEN (fun th -> ALL_TAC) THEN
+     GEN_TAC THEN
+     
+     
+
+
+
+     ASM_MESON_TAC[Fan.extension_sigma_fan; permutes]
+
+
+
+     FIRST_ASSUM (MP_TAC o (fun th -> CONJUNCT1 (MATCH_MP PERMUTES_INVERSES th))) THEN
+     DISCH_THEN (MP_TAC o SPEC `w:real^3`) THEN
+     REWRITE_TAC[Fan.extension_sigma_fan; inverse] THEN
+
+
+     PERMUTES_INVERSE
+     
+
+
+
+     DISCH_THEN (MP_TAC o (fun th -> MATCH_MP N_FAN_PAIR_EXT_PERMUTES_DART1_OF_FAN th)) THEN
+     REPEAT STRIP_TAC THEN
+     REWRITE_TAC[Fan.simp_inverse_sigma_fan] THEN
+     MP_TAC (SPECL [`sigma_fan (vec 0) V
+
+
+     REWRITE_TAC[GSYM SURJECTIVE_INVERSE]
+
+
+
+
+     DISCH_THEN (MP_TAC o (fun th -> CONJUNCT1 (MATCH_MP PERMUTES_INVERSES_o th))) THEN
+     REWRITE_TAC[FUN_EQ_THM; I_THM; o_THM] THEN
+     REPEAT STRIP_TAC THEN
+     FIRST_X_ASSUM (MP_TAC o SPEC `v:real^3,w:real^3`) THEN
+     REWRITE_TAC[inverse; n_fan_pair_ext] THEN
+     REWRITE_TAC[Fan.simp_inverse_sigma_fan] THEN
+     
+
+
+     REWRITE_TAC[permutes; n_fan_pair_ext] THEN
+     DISCH_THEN (CONJUNCTS_THEN2 (fun th -> ALL_TAC) ASSUME_TAC) THEN
+     GEN_TAC THEN GEN_TAC THEN
+     FIRST_X_ASSUM (MP_TAC o SPEC `v:real^3,w:real^3`) THEN
+     
+
+Fan.INVERSE1_SIGMA_FAN
+INVERSE_UNIQUE_o
+     
+     REWRITE_TAC[Fan.inverse_sigma_fan] THEN
+     
+
+   MP_TAC N_FAN_PAIR_EXT_PERMUTES_DART1_OF_FAN
+     REWRITE_TAC[n_fan_pair_ext; Fan.inverse_sigma_fan]
+

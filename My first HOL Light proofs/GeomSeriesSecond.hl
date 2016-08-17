@@ -1,0 +1,765 @@
+prioritize_real();;
+parse_as_infix("-->", (12, "right"));;
+
+
+
+
+(* Define limit of a sequence *)
+let tends_to = new_definition `!(x:num -> real) (x0:real). x --> x0 <=> !eps. eps > &0 ==> ?N:num. !n:num. n >= N ==> abs(x n - x0) < eps`;;
+
+
+
+
+(* Auxiliary result *)
+
+
+(* Useful lemma *)
+let limit_N_exists = prove(`!x x0 eps. x --> x0 /\ eps > &0 ==> ?N:num. !n. n >= N ==> abs(x n - x0) < eps`,
+			     REWRITE_TAC[tends_to] THEN MESON_TAC[]);;
+
+
+(* Limit is translation invariant *)
+let limit_translation = prove(`!x x0 k. x --> x0 <=> (\n. x (n + k)) --> x0`,
+REPEAT GEN_TAC THEN
+EQ_TAC THEN
+REWRITE_TAC[tends_to] THENL
+[
+REPEAT STRIP_TAC THEN
+FIRST_X_ASSUM (MP_TAC o SPECL [`eps:real`]) THEN
+ASM_REWRITE_TAC[] THEN
+DISCH_THEN (LABEL_TAC "A") THEN
+REMOVE_THEN "A" (X_CHOOSE_THEN `M:num` ASSUME_TAC) THEN
+EXISTS_TAC `M:num` THEN
+ASM_MESON_TAC[ARITH_RULE `n >= M ==> (n + (k:num)) >= M`];
+
+REPEAT STRIP_TAC THEN
+FIRST_X_ASSUM (MP_TAC o SPECL [`eps:real`]) THEN
+ASM_REWRITE_TAC[] THEN
+  DISCH_THEN (LABEL_TAC "A") THEN
+  REMOVE_THEN "A" (X_CHOOSE_THEN `(M:num)` ASSUME_TAC) THEN
+EXISTS_TAC `(M:num) + k` THEN
+REPEAT STRIP_TAC THEN
+FIRST_X_ASSUM (MP_TAC o (SPEC `(n:num) - k`)) THEN
+ASSUME_TAC ((UNDISCH o ARITH_RULE) `n >= M + (k:num) ==> n - k >= M`) THEN
+ASSUME_TAC ((UNDISCH o ARITH_RULE) `n >= M + k ==> n >= (k:num)`) THEN
+ASSUME_TAC ((UNDISCH o ARITH_RULE) `n >= (k:num) ==> (n - k) + k = n`) THEN
+ASM_SIMP_TAC[]
+]);;
+
+
+
+(* Limit of an absolute value (zero) *)
+let limit_abs_zero = prove(
+`!x. x --> &0 <=> (\n. abs (x n)) --> &0`,
+  GEN_TAC THEN
+    REWRITE_TAC[tends_to; REAL_ARITH `a - &0 = a`; REAL_ABS_ABS]);;
+
+
+
+
+(* Limit of an absolute value *)
+let limit_abs = prove(
+`!x. x --> x0 ==> (\n. abs (x n)) --> abs x0`,
+GEN_TAC THEN
+REWRITE_TAC[tends_to] THEN
+REPEAT STRIP_TAC THEN
+FIRST_X_ASSUM (MP_TAC o (SPEC `eps:real`)) THEN
+ASM_REWRITE_TAC[] THEN
+  DISCH_THEN (X_CHOOSE_THEN `N:num` ASSUME_TAC) THEN
+EXISTS_TAC `N:num` THEN
+GEN_TAC THEN
+FIRST_X_ASSUM (MP_TAC o (SPEC `n:num`)) THEN
+MP_TAC (REAL_ARITH `abs ((x:num->real) n) - abs x0 <= abs(x n - x0)`) THEN
+REPEAT STRIP_TAC THEN
+  SUBGOAL_THEN `abs (abs ((x:num->real) n) - abs x0) <= abs(x n - x0)` ASSUME_TAC THENL
+[
+  REAL_ARITH_TAC;
+
+  FIRST_X_ASSUM MP_TAC THEN
+    FIRST_X_ASSUM MP_TAC THEN
+    FIRST_X_ASSUM MP_TAC THEN
+    DISCH_THEN (LABEL_TAC "A") THEN
+    DISCH_THEN (LABEL_TAC "B") THEN
+    REMOVE_THEN "A" MP_TAC THEN
+    ASM_REWRITE_TAC[] THEN
+    REAL_ARITH_TAC
+]);;
+
+
+
+
+(* Limit of a constant sequence *)
+let limit_const = prove(`!c. (\n. c) --> c`,
+GEN_TAC THEN
+REWRITE_TAC[tends_to] THEN
+GEN_TAC THEN
+REPEAT STRIP_TAC THEN
+EXISTS_TAC `0` THEN
+REPEAT STRIP_TAC THEN
+REWRITE_TAC[REAL_FIELD `c - c = &0`; REAL_FIELD `abs(&0) = &0`] THEN
+ASM_MESON_TAC[REAL_FIELD `eps > &0 ==> &0 < eps`]);;
+
+
+
+
+(* Triangle inequality *)
+let abs_triangle = REAL_ARITH `!x y:real. abs(x + y) <= abs x + abs y`;;
+
+
+(* 0 <= x < a and 0 <= y < b imply x * y < a * b *)
+let real_lt_mul = prove(`&0 <= x /\ x < a /\ &0 <= y /\ y < b ==> x * y < a * b`,
+REPEAT STRIP_TAC THEN
+SUBGOAL_THEN `a * y < a * b` ASSUME_TAC THENL
+[
+  MATCH_MP_TAC REAL_LT_LMUL THEN
+    ASM_MESON_TAC[REAL_ARITH `x < a /\ &0 <= x ==> &0 < a`];
+  SUBGOAL_THEN `x * y <= a * y` ASSUME_TAC THENL
+    [
+      MATCH_MP_TAC REAL_LE_RMUL THEN
+	ASM_SIMP_TAC[REAL_ARITH `x < a ==> x <= a`];
+  FIRST_X_ASSUM MP_TAC THEN
+  FIRST_X_ASSUM MP_TAC THEN
+  REAL_ARITH_TAC
+    ]
+]);;
+
+
+
+(* Equivalent definition of the limit *)
+let lemma_limit_zero = prove(`x --> x0 <=> (\n. x n - x0) --> &0`,
+REWRITE_TAC[tends_to; REAL_FIELD `a - &0 = a`]);;
+
+
+
+(* Limit is unique *)
+let limit_unique = prove(`!x a b. x --> a /\ x --> b ==> a = b`,
+REWRITE_TAC[tends_to] THEN
+REPEAT STRIP_TAC THEN
+DISJ_CASES_TAC (MESON[] `(a:real = b) \/ ~(a = b)`) THENL
+[
+  ASM_REWRITE_TAC[];
+  ASM_REWRITE_TAC[] THEN
+     REPEAT (FIRST_X_ASSUM (MP_TAC o (SPEC `abs(a:real - b) / &2`) o check (is_forall o concl))) THEN
+    ASSUME_TAC ((UNDISCH o REAL_ARITH) `~(a = b) ==> abs (a - b) / &2 > &0`) THEN
+    ASM_REWRITE_TAC[] THEN
+    DISCH_THEN (X_CHOOSE_THEN `M:num` ASSUME_TAC) THEN
+    DISCH_THEN (X_CHOOSE_THEN `K:num` ASSUME_TAC) THEN
+    REPEAT (FIRST_X_ASSUM (MP_TAC o (SPEC `(M:num) + (K:num)`))) THEN
+    REWRITE_TAC[ARITH_RULE `(M:num) + K >= M /\ M + (K:num) >= K`] THEN
+    REAL_ARITH_TAC     
+]);;
+
+
+
+
+
+
+(* Limit of a sum (for zero) *)
+let limit_add_zero = prove(`!x x0 y y0. x --> &0 /\ y --> &0 ==> (\n. x n + y n) --> &0`,
+REWRITE_TAC[tends_to; REAL_FIELD `a - &0 = a`] THEN
+REPEAT STRIP_TAC THEN
+REPEAT (FIRST_X_ASSUM (MP_TAC o (SPEC `(eps:real) / &2`))) THEN
+ASM_REWRITE_TAC[REAL_ARITH `eps / &2 > &0 <=> eps > &0`] THEN
+DISCH_THEN (LABEL_TAC "X") THEN
+DISCH_THEN (LABEL_TAC "Y") THEN
+  REMOVE_THEN "X" (X_CHOOSE_THEN `M:num` (LABEL_TAC "X")) THEN
+  REMOVE_THEN "Y" (X_CHOOSE_THEN `K:num` (LABEL_TAC "Y")) THEN
+EXISTS_TAC `(M:num) + (K:num)` THEN
+REPEAT STRIP_TAC THEN
+ASSUME_TAC ((UNDISCH o ARITH_RULE) `n:num >= M + K ==> n >= M /\ n >= K`) THEN
+  REMOVE_THEN "X" (MP_TAC o (SPEC `n:num`)) THEN
+ASM_REWRITE_TAC[] THEN
+DISCH_TAC THEN
+REMOVE_THEN "Y" (MP_TAC o (SPEC `n:num`)) THEN ASM_REWRITE_TAC[] THEN DISCH_TAC THEN
+MP_TAC (REAL_ARITH `abs (x (n:num)) < eps / &2 /\ abs (y (n:num)) < eps / &2 ==> abs(x n) + abs(y n) < eps`) THEN
+ASM_REWRITE_TAC[] THEN
+MP_TAC (SPECL [`(x:num->real) n`; `(y:num->real) n`] abs_triangle) THEN
+REAL_ARITH_TAC);;
+
+
+
+
+(* Limit of a product (for zero) *)
+let limit_mul_zero = prove(`!x x0 y y0. x --> &0 /\ y --> &0 ==> (\n. x n * y n) --> &0`,
+REWRITE_TAC[tends_to; REAL_ARITH `a - &0 = a`] THEN REPEAT STRIP_TAC THEN
+FIRST_X_ASSUM (MP_TAC o (SPEC `&1`)) THEN
+FIRST_X_ASSUM (MP_TAC o (SPEC `eps:real`)) THEN
+ASM_REWRITE_TAC [ARITH_RULE `&1 > &0`] THEN
+  DISCH_THEN (X_CHOOSE_THEN `M:num` (LABEL_TAC "X")) THEN
+  DISCH_THEN (X_CHOOSE_THEN `K:num` (LABEL_TAC "Y")) THEN
+EXISTS_TAC `(M:num) + (K:num)` THEN
+REPEAT STRIP_TAC THEN
+ASSUME_TAC ((UNDISCH o ARITH_RULE) `n:num >= M + K ==> n >= M /\ n >= K`) THEN
+  REMOVE_THEN "X" (MP_TAC o (SPEC `n:num`)) THEN
+  REMOVE_THEN "Y" (MP_TAC o (SPEC `n:num`)) THEN
+ASM_REWRITE_TAC[REAL_ABS_MUL] THEN
+ONCE_REWRITE_TAC[REAL_ARITH `a * b < c <=> a * b < c * &1`] THEN
+REPEAT STRIP_TAC THEN
+MATCH_MP_TAC real_lt_mul THEN
+REPEAT CONJ_TAC THEN
+ASM_SIMP_TAC[REAL_ABS_POS]
+			  );;
+
+
+
+
+
+(* Limit theorems *)
+
+
+(* Limit of a sum *)
+let limit_add = prove(`!x x0 y y0. x --> x0 /\ y --> y0 ==> (\n. x n + y n) --> x0 + y0`,
+ONCE_REWRITE_TAC[lemma_limit_zero] THEN
+REWRITE_TAC[BETA_THM; REAL_ARITH `((x:num->real) n + (y:num->real) n) - (x0 + y0) = (x n - x0) + (y n - y0)`] THEN
+SIMP_TAC[limit_add_zero]);;
+
+
+
+
+(* Limit of a negation *)
+let limit_neg = prove(`!x x0. (x --> x0) <=> ((\n. --x n) --> --x0)`,
+REWRITE_TAC[tends_to] THEN
+ONCE_REWRITE_TAC[REAL_ARITH `abs (--x n - --x0) = abs(x n - x0)`] THEN
+SIMP_TAC[]);;
+
+
+
+(* Limit of a difference *)
+let limit_sub = prove(`!x x0 y y0. x --> x0 /\ y --> y0 ==> (\n. x n - y n) --> x0 - y0`,
+ONCE_REWRITE_TAC[lemma_limit_zero] THEN
+REWRITE_TAC[BETA_THM] THEN
+REPEAT STRIP_TAC THEN
+ONCE_REWRITE_TAC[ARITH_RULE `x n - y n - (x0 - y0) = (x n - x0) + (y0 - y n)`] THEN
+MATCH_MP_TAC limit_add_zero THEN
+CONJ_TAC THENL 
+[
+ASM_REWRITE_TAC[];
+ONCE_REWRITE_TAC[limit_neg] THEN
+REWRITE_TAC[BETA_THM] THEN
+ONCE_REWRITE_TAC[REAL_ARITH `--(a - b) = b - a`; REAL_ARITH `-- &0 = &0`] THEN
+ASM_REWRITE_TAC[]
+]);;
+
+
+
+(* Limit of a product of a sequence and a constant *)
+let limit_mul_zero_const = prove(`!x c. x --> &0 ==> (\n. c * x n) --> &0`,
+REWRITE_TAC[tends_to; REAL_ARITH `a - &0 = a`] THEN
+REPEAT STRIP_TAC THEN
+DISJ_CASES_TAC (MESON[] `c = &0 \/ ~(c = &0)`) THENL
+[
+ASM_SIMP_TAC[REAL_ARITH `&0 * a = &0 /\ abs(&0) = &0 /\ (eps > &0 ==> &0 < eps)`];
+FIRST_X_ASSUM (MP_TAC o (SPEC `eps / abs(c)`)) THEN
+ASSUME_TAC ((UNDISCH o REAL_ARITH) `~(c = &0) ==> abs c > &0`) THEN
+  SUBGOAL_THEN `eps / abs c > &0` ASSUME_TAC THENL
+  [
+    ASSUME_TAC (REAL_ARITH `(eps > &0 <=> &0 < eps) /\ (abs c > &0 <=> &0 < abs c)`) THEN
+      ASSUME_TAC (SPECL [`eps:real`; `abs(c:real)`] REAL_LT_DIV) THEN
+      ASM_MESON_TAC[REAL_ARITH `eps / abs c > &0 <=> &0 < eps / abs c`];
+
+
+    ASM_REWRITE_TAC[] THEN
+      DISCH_THEN (X_CHOOSE_THEN `N:num` (LABEL_TAC "X")) THEN
+      EXISTS_TAC `N:num` THEN
+      REPEAT STRIP_TAC THEN
+      REMOVE_THEN "X" (MP_TAC o (SPEC `n:num`)) THEN
+      ASM_REWRITE_TAC[REAL_ABS_MUL] THEN
+      STRIP_TAC THEN
+      SUBGOAL_THEN `abs (c:real) * abs ((x:num->real) n) < abs c * (eps / abs c)` MP_TAC THENL
+      [
+	MATCH_MP_TAC REAL_LT_LMUL THEN
+	  ASM_SIMP_TAC[REAL_ARITH `abs c > &0 ==> &0 < abs c`];
+
+	ASSUME_TAC (UNDISCH (REAL_FIELD `abs c > &0 ==> abs c * eps / abs c = eps`)) THEN
+	  ASM_REWRITE_TAC[]
+      ]
+  ]
+]);;
+
+
+let limit_mul_const = prove(`!x x0 c. x --> x0 ==> (\n. c * x n) --> c * x0`,
+ONCE_REWRITE_TAC[lemma_limit_zero] THEN
+REWRITE_TAC[BETA_THM; REAL_FIELD `c * x n - c * x0 = c*(x n - x0)`] THEN
+REPEAT STRIP_TAC THEN
+MATCH_MP_TAC limit_mul_zero_const THEN
+ASM_SIMP_TAC[]);;
+
+
+
+
+
+(* Limit of a product of two sequences *)
+let limit_mul = prove(`!x x0 y y0. x --> x0 /\ y --> y0 ==> (\n. x n * y n) --> x0 * y0`,
+ONCE_REWRITE_TAC[lemma_limit_zero] THEN
+REWRITE_TAC[BETA_THM; REAL_RING `x n * y n - x0 * y0 = (x n - x0)*(y n - y0) + x0 * y n + x n * y0 - &2 * x0 * y0`] THEN
+REPEAT STRIP_TAC THEN
+MATCH_MP_TAC limit_add_zero THEN
+CONJ_TAC THENL
+[
+  MATCH_MP_TAC limit_mul_zero THEN
+    ASM_SIMP_TAC[];
+
+  REWRITE_TAC[REAL_RING `x0 * y n + x n * y0 - &2 * x0 * y0 = x0 * (y n - y0) + (x n - x0) * y0`] THEN
+    MATCH_MP_TAC limit_add_zero THEN
+    ASM_SIMP_TAC[REAL_MUL_AC; limit_mul_zero_const]
+]);;
+
+
+
+(* Limit of the inverse of a sequence *)
+let limit_inv = prove(`!x x0. x --> x0 /\ ~(x0 = &0) ==> (\n. inv(x n)) --> inv x0`,
+REPEAT STRIP_TAC THEN
+  SUBGOAL_THEN `?d. d > &0 /\ (?N:num. !n. n >= N ==> d < abs(x0 * x n))` ASSUME_TAC THENL
+  [
+    EXISTS_TAC `abs(x0) * abs(x0) / &2` THEN
+      CONJ_TAC THENL
+      [
+	REWRITE_TAC[REAL_ARITH `a > &0 <=> &0 < a`] THEN
+	  MATCH_MP_TAC REAL_LT_MUL THEN
+	  MP_TAC (REAL_ARITH `~(x0 = &0) ==> &0 < abs x0 /\ &0 < abs x0 / &2`) THEN
+	  ASM_SIMP_TAC[];
+	
+	FIRST_X_ASSUM MP_TAC THEN
+	  FIRST_X_ASSUM MP_TAC THEN
+	  REWRITE_TAC[tends_to] THEN
+	  DISCH_THEN ((LABEL_TAC "A") o (SPEC `abs(x0) / &2`)) THEN
+	  DISCH_THEN (LABEL_TAC "B") THEN
+	  MP_TAC (REAL_ARITH `~(x0 = &0) ==> (abs x0 / &2) > &0`) THEN
+	  ASM_REWRITE_TAC[] THEN
+	  DISCH_TAC THEN
+	  REMOVE_THEN "A" MP_TAC THEN
+	  ASM_REWRITE_TAC[] THEN
+	  DISCH_THEN (X_CHOOSE_THEN `N:num` (LABEL_TAC "A")) THEN
+	  EXISTS_TAC `N:num` THEN
+	  GEN_TAC THEN
+	  REMOVE_THEN "A" ((LABEL_TAC "A") o (SPEC `n:num`)) THEN
+	  ASSUME_TAC (REAL_ARITH `abs(x n - x0) < abs x0 / &2 ==> abs x0 / &2 < abs (x n)`) THEN
+	  DISCH_TAC THEN
+	  REWRITE_TAC[REAL_ABS_MUL] THEN
+	  MATCH_MP_TAC REAL_LT_LMUL THEN
+	  MP_TAC (REAL_ARITH `abs x0 / &2 > &0 ==> &0 < abs x0`) THEN
+	  ASM_REWRITE_TAC[] THEN
+	  DISCH_TAC THEN
+	  ASM_REWRITE_TAC[] THEN
+	  REMOVE_THEN "A" MP_TAC THEN
+	  ASM_REWRITE_TAC[]
+      ];
+
+    FIRST_X_ASSUM (X_CHOOSE_THEN `d:real` MP_TAC) THEN
+      REPEAT (FIRST_X_ASSUM MP_TAC) THEN
+      REWRITE_TAC[tends_to] THEN
+      DISCH_THEN (LABEL_TAC "A") THEN
+      DISCH_THEN (LABEL_TAC "B") THEN
+      STRIP_TAC THEN
+      FIRST_X_ASSUM (LABEL_TAC "C") THEN
+      REPEAT STRIP_TAC THEN
+      REMOVE_THEN "A" (MP_TAC o (SPEC `(eps:real) * d`)) THEN
+      SUBGOAL_THEN `eps * d > &0` ASSUME_TAC THENL
+      [
+	REWRITE_TAC[REAL_ARITH `a > &0 <=> &0 < a`] THEN
+	  MATCH_MP_TAC REAL_LT_MUL THEN
+	  ASM_REWRITE_TAC[REAL_ARITH `&0 < a <=> a > &0`];
+
+	ASM_REWRITE_TAC[] THEN
+	  DISCH_THEN (X_CHOOSE_THEN `M:num` (LABEL_TAC "A")) THEN
+	  EXISTS_TAC `(N:num) + M` THEN
+	  REPEAT STRIP_TAC THEN
+	  REMOVE_THEN "A" (MP_TAC o (SPEC `n:num`)) THEN
+	  REMOVE_THEN "C" (MP_TAC o (SPEC `n:num`)) THEN
+	  MP_TAC (ARITH_RULE `n:num >= N + M ==> n >= N /\ n >= M`) THEN
+	  ASM_REWRITE_TAC[] THEN
+	  STRIP_TAC THEN
+	  ASM_REWRITE_TAC[] THEN
+	  LABEL_TAC "D" (((SPECL [`(x:num->real) n`; `x0:real`]) o REAL_FIELD) `!a b. ~(a = &0) /\ ~(b = &0) ==> (inv a - inv b = (b - a) * inv(a * b))`) THEN
+	  DISJ_CASES_TAC (MESON[] `x0 = &0 \/ ~(x0 = &0)`) THENL
+	  [
+	    ASM_REWRITE_TAC[REAL_ARITH `&0 * a = &0`; REAL_ARITH `abs(&0) = &0`] THEN
+	      ASM_MESON_TAC[REAL_ARITH `d > &0 ==> ~(d < &0)`];
+	    DISJ_CASES_TAC (MESON[] `(x:num->real) n = &0 \/ ~(x n = &0)`) THENL
+	      [
+		ASM_REWRITE_TAC[REAL_ARITH `a * &0 = &0`; REAL_ARITH `abs(&0) = &0`] THEN
+		  ASM_MESON_TAC[REAL_ARITH `d > &0 ==> ~(d < &0)`];
+
+		REMOVE_THEN "D" MP_TAC THEN
+		  ASM_REWRITE_TAC[] THEN
+		  DISCH_TAC THEN
+		  ASM_REWRITE_TAC[] THEN
+		  REPEAT STRIP_TAC THEN
+		  REWRITE_TAC[REAL_ABS_MUL] THEN
+		  ONCE_REWRITE_TAC[REAL_ARITH `(a:real) < b <=> a < b * &1`] THEN
+		  ONCE_REWRITE_TAC[(UNDISCH o REAL_FIELD) `d > &0 ==> (a * &1 = (a * d) * inv(d))`] THEN
+		  MATCH_MP_TAC real_lt_mul THEN
+		  ASM_REWRITE_TAC[REAL_ABS_POS; REAL_ARITH `abs(x0 - x n) = abs(x n - x0)`] THEN
+		  REWRITE_TAC[REAL_ABS_INV] THEN
+		  SUBGOAL_THEN `!a b:real. &0 < a /\ &0 < b ==> (a < b <=> inv b < inv a)` ASSUME_TAC THENL
+		  [
+		    REPEAT STRIP_TAC THEN
+		      EQ_TAC THENL
+		      [
+			DISCH_TAC THEN
+			  ONCE_REWRITE_TAC[(UNDISCH o REAL_FIELD) `&0 < b ==> a = (a * b) * inv b`] THEN
+			  REWRITE_TAC[(UNDISCH o REAL_FIELD) `&0 < b ==> inv b * b = &1`] THEN
+			  MATCH_MP_TAC REAL_LT_RMUL THEN
+			  MP_TAC (GSYM (SPEC `b:real` REAL_LT_INV)) THEN
+			  ASM_REWRITE_TAC[] THEN
+			  DISCH_TAC THEN
+			  ASM_REWRITE_TAC[] THEN
+			  ONCE_REWRITE_TAC[(UNDISCH o REAL_FIELD) `&0 < a ==> &1 = inv a * a`] THEN
+			  MATCH_MP_TAC REAL_LT_LMUL THEN
+			  MP_TAC (GSYM (SPEC `a:real` REAL_LT_INV)) THEN
+			  ASM_SIMP_TAC[];
+
+			DISCH_TAC THEN
+			  ONCE_REWRITE_TAC[(UNDISCH o REAL_FIELD) `&0 < a ==> b = (inv a * b) * a`] THEN
+			  REWRITE_TAC[(UNDISCH o REAL_FIELD) `&0 < a ==> inv a * a = &1`] THEN
+			  MATCH_MP_TAC REAL_LT_RMUL THEN
+			  ASM_SIMP_TAC[] THEN
+			  ONCE_REWRITE_TAC[(UNDISCH o REAL_FIELD) `&0 < b ==> &1 = inv b * b`] THEN
+			  MATCH_MP_TAC REAL_LT_RMUL THEN
+			  ASM_SIMP_TAC[]
+  
+		      ];
+
+		    FIRST_X_ASSUM (MP_TAC o (SPECL [`d:real`; `abs((x:num->real) n * x0)`])) THEN
+		      ASM_SIMP_TAC[REAL_ARITH `d > &0 ==> &0 < d`] THEN
+		      MP_TAC (REAL_ARITH `d > &0 /\ d < abs(x0 * (x:num->real) n) ==> &0 < abs(x n * x0)`) THEN
+		      ASM_REWRITE_TAC[] THEN
+		      DISCH_TAC THEN
+		      ASM_REWRITE_TAC[] THEN
+      
+		      DISCH_THEN (ASSUME_TAC o SYM) THEN
+		      ASM_REWRITE_TAC[] THEN
+		      ONCE_REWRITE_TAC[REAL_ARITH `abs (a * b) = abs (b * a)`] THEN
+		      ASM_REWRITE_TAC[]
+		  ]
+	      ]
+
+	  ]
+	  
+      ]
+
+  ]);;
+
+
+
+
+
+(* Limit of a quotiet *)
+let limit_div = prove(`!x x0 y y0. x --> x0 /\ y --> y0 /\ ~(y0 = &0) ==> (\n. x n / y n) --> x0 / y0`,
+REPEAT STRIP_TAC THEN
+  REWRITE_TAC[REAL_FIELD `a / b = a * inv(b)`] THEN
+  MATCH_MP_TAC limit_mul THEN
+  ASM_SIMP_TAC[limit_inv] );;
+
+
+
+
+
+let limit_pow = prove(
+`!x x0 k. x --> x0 ==> (\n. x n pow k) --> x0 pow k`,
+GEN_TAC THEN GEN_TAC THEN
+  INDUCT_TAC THEN STRIP_TAC THENL
+  [
+    REWRITE_TAC[REAL_ARITH `x pow 0 = &1`] THEN
+      SIMP_TAC[limit_const];
+
+    REWRITE_TAC[ARITH_RULE `SUC k = k + 1`; REAL_POW_ADD; REAL_POW_1] THEN
+      MATCH_MP_TAC limit_mul THEN
+      ASM_SIMP_TAC[]
+   
+  ]);;
+
+
+
+
+
+(* Limits of monotonic sequences *)
+
+
+let lemma1 = prove(`!P f. (!n:num. P((f:num->real) n)) <=> (!a:real. a IN IMAGE f (:num) ==> P a)`,
+REPEAT GEN_TAC THEN EQ_TAC THENL
+[
+  MESON_TAC[IN_IMAGE];
+  REWRITE_TAC[IN_IMAGE] THEN
+    REPEAT STRIP_TAC THEN
+    FIRST_X_ASSUM (MP_TAC o (SPEC `(f:num->real) n`)) THEN
+    ANTS_TAC THEN SIMP_TAC[] THEN
+    EXISTS_TAC `n:num` THEN
+    SIMP_TAC[IN; UNIV]
+]);;
+
+
+
+
+(* Existance of limit for an increasing bounded sequence *)
+let limit_mono_inc = prove(`!x. (!n. x (SUC n) >= x n) /\ (?c. !n. x n <= c) ==> ?x0. x --> x0`,
+REPEAT STRIP_TAC THEN
+  SUBGOAL_THEN `?K:real. (!n:num. x n <= K) /\ (!L:real. (!n. x n <= (L:real)) ==> K <= L)` (X_CHOOSE_THEN `K:real` STRIP_ASSUME_TAC) THENL
+[
+  REWRITE_TAC[REAL_ARITH `a <= b <=> b >= a`] THEN
+    REWRITE_TAC[SPECL [`(>=) (K:real)`; `x:num->real`] lemma1] THEN
+    REWRITE_TAC[REAL_ARITH `b >= a <=> a <= b`] THEN
+    MATCH_MP_TAC REAL_COMPLETE THEN
+    CONJ_TAC THENL
+    [
+      EXISTS_TAC `(x:num->real) 0` THEN
+	SIMP_TAC[IN_IMAGE; IN; UNIV] THEN
+	EXISTS_TAC `0` THEN
+	SIMP_TAC[];
+      EXISTS_TAC `c:real` THEN
+	GEN_TAC THEN
+	ASM_MESON_TAC[IN_IMAGE; IN; UNIV]
+    ];
+  
+  EXISTS_TAC `K:real` THEN
+    REWRITE_TAC [tends_to] THEN
+    REPEAT STRIP_TAC THEN
+    MP_TAC (((GEN `n:num`) o REAL_ARITH) `(x:num->real) n <= (K:real) ==> (abs((x:num->real) n - K) = K - x n)`) THEN
+    ASM_SIMP_TAC[] THEN
+    DISCH_TAC THEN
+    
+    REPEAT (FIRST_X_ASSUM MP_TAC) THEN
+    DISCH_THEN (LABEL_TAC "A") THEN
+    DISCH_THEN (LABEL_TAC "B") THEN
+    DISCH_THEN (LABEL_TAC "C") THEN
+    DISCH_THEN (LABEL_TAC "D") THEN
+    DISCH_THEN (LABEL_TAC "E") THEN
+    DISCH_THEN (fun th -> ALL_TAC) THEN
+
+
+
+    SUBGOAL_THEN `(?m:num. (K:real) - (x:num->real) m < eps)` ASSUME_TAC THENL
+    [
+      REWRITE_TAC [GSYM REAL_NOT_LE] THEN
+	REWRITE_TAC [GSYM NOT_FORALL_THM] THEN
+	STRIP_TAC THEN
+	REMOVE_THEN "D" (MP_TAC o (SPEC `(K:real) - eps`)) THEN
+	REWRITE_TAC[REAL_ARITH `K <= K - eps <=> ~(eps > &0)`] THEN
+	ASM_REWRITE_TAC[] THEN
+	FIRST_X_ASSUM MP_TAC THEN
+	MATCH_MP_TAC MONO_FORALL THEN
+	GEN_TAC THEN
+	REAL_ARITH_TAC;
+      
+      FIRST_X_ASSUM (X_CHOOSE_THEN `m:num` ASSUME_TAC) THEN
+      EXISTS_TAC `m:num` THEN
+	GEN_TAC THEN
+	SUBGOAL_THEN `!n:num. (n >= m ==> (x:num->real) n >= x m)` ASSUME_TAC THENL
+	[
+	  INDUCT_TAC THENL
+	    [
+	      DISJ_CASES_TAC (ARITH_RULE `m = 0 \/ m > 0`) THENL
+		[
+		  ASM_SIMP_TAC[ARITH] THEN
+		    SIMP_TAC [ARITH_RULE `a >= a`];
+		  ASM_SIMP_TAC[ARITH_RULE `m > 0 ==> ~(0 >= m)`]
+		];
+
+	      REWRITE_TAC[ARITH_RULE `SUC n = n + 1`] THEN
+		DISJ_CASES_TAC (ARITH_RULE `(n:num) >= m \/ n < m`) THENL
+		[
+		  ASSUME_TAC ((UNDISCH o ARITH_RULE) `n:num >= m ==> n + 1 >= m`) THEN
+		    FIRST_X_ASSUM (MP_TAC o check (is_imp o concl)) THEN
+		    ASM_REWRITE_TAC[] THEN
+		    REMOVE_THEN "A" (MP_TAC o (SPEC `n:num`)) THEN
+		    REWRITE_TAC[ARITH_RULE `SUC n = n + 1`] THEN
+		    ARITH_TAC;
+
+		  DISJ_CASES_TAC (ARITH_RULE `(m:num) = 0 \/ m > 0`) THENL
+		    [
+		      FIRST_X_ASSUM MP_TAC THEN
+			FIRST_X_ASSUM MP_TAC THEN
+			ASSUME_TAC (ARITH_RULE `(n:num) < m /\ m = 0 <=> F`) THEN
+			ASM_REWRITE_TAC[IMP_IMP];
+
+		      DISCH_TAC THEN
+			ASSUME_TAC (ARITH_RULE `(n:num) < m /\ n + 1 >= m ==> n = m - 1`) THEN
+			FIRST_X_ASSUM MP_TAC THEN
+			ASM_REWRITE_TAC[] THEN
+			ASM_SIMP_TAC[] THEN
+			ASSUME_TAC (ARITH_RULE `m > 0 ==> (m:num) - 1 + 1 = m`) THEN
+			FIRST_X_ASSUM MP_TAC THEN
+			ASM_SIMP_TAC[] THEN
+			ARITH_TAC
+		    ];
+		]
+	    ];
+
+	  FIRST_X_ASSUM (MP_TAC o (SPEC `n:num`)) THEN
+	    MP_TAC (ARITH_RULE `x n >= x m ==> K - x n <= K - x m`) THEN
+	    FIRST_X_ASSUM (MP_TAC) THEN
+	    ARITH_TAC
+	]
+    ]
+]);;
+
+
+
+
+	
+(* Existance of limit for a decreasing bounded sequence *)
+let limit_mono_dec = prove(
+`!x. (!n. x (SUC n) <= x n) /\ (?c. !n. x n >= c) ==> (?x0. x --> x0)`,
+REPEAT STRIP_TAC THEN
+  SUBGOAL_THEN `?y0. (\n. --(x:num->real) n) --> y0` ASSUME_TAC THENL
+    [
+      MATCH_MP_TAC limit_mono_inc THEN
+	REPEAT STRIP_TAC THENL
+	[
+	  BETA_TAC THEN
+	    REWRITE_TAC[REAL_ARITH `--a >= -- b <=> a <= b`] THEN
+	    ASM_MESON_TAC[]; 
+	  BETA_TAC THEN
+	    EXISTS_TAC `--c` THEN
+	    ASM_MESON_TAC[REAL_ARITH `--a <= --b <=> a >= b`]
+ 	];
+
+      FIRST_X_ASSUM (X_CHOOSE_THEN `y0:real` ASSUME_TAC) THEN
+      EXISTS_TAC `--y0` THEN
+	ONCE_REWRITE_TAC[limit_neg] THEN
+	REWRITE_TAC[REAL_NEG_NEG] THEN
+	ASM_SIMP_TAC[]
+   ]
+);;
+
+ 
+
+
+
+
+(* |c|^n --> 0 when |c| < 1 *)
+let limit_power_abs = prove(`!c. abs c < &1 ==> (\n. (abs c) pow n) --> &0`,
+REPEAT STRIP_TAC THEN
+  SUBGOAL_THEN `?c0. (\n. abs c pow n) --> c0` ASSUME_TAC THENL
+    [
+      MATCH_MP_TAC limit_mono_dec THEN
+	BETA_TAC THEN
+	REPEAT STRIP_TAC THENL
+	[
+	  REWRITE_TAC[ARITH_RULE `SUC n = n + 1`; REAL_POW_ADD; REAL_POW_1] THEN
+	    ONCE_REWRITE_TAC[REAL_ARITH `a = a * &1`] THEN
+	    ONCE_REWRITE_TAC[REAL_ARITH `(a * b) * &1 = a * b`] THEN
+	    MATCH_MP_TAC REAL_LE_LMUL THEN
+	    CONJ_TAC THENL 
+	    [
+	      REWRITE_TAC[GSYM REAL_ABS_POW; REAL_ABS_POS]; 
+	      FIRST_X_ASSUM MP_TAC THEN
+		REAL_ARITH_TAC
+      
+	    ];
+
+	  EXISTS_TAC `&0` THEN
+	    GEN_TAC THEN
+	    REWRITE_TAC[GSYM REAL_ABS_POW; REAL_ARITH `a >= &0 <=> &0 <= a`] THEN
+	    REWRITE_TAC[REAL_ABS_POS]
+ 
+	];
+
+      FIRST_X_ASSUM (X_CHOOSE_THEN `c0:real` ASSUME_TAC) THEN
+      SUBGOAL_THEN `(\n:num. abs c pow n) --> c0 * abs(c)` ASSUME_TAC THENL
+	[
+	  ONCE_REWRITE_TAC[SPECL [`x:num->real`; `x0:real`; `1`] limit_translation] THEN
+	    BETA_TAC THEN
+	    REWRITE_TAC[REAL_POW_ADD] THEN
+	    MATCH_MP_TAC limit_mul THEN
+	    CONJ_TAC THENL
+	    [
+	      ASM_SIMP_TAC[];
+	      ASM_SIMP_TAC[REAL_POW_1; limit_const]
+
+	    ];
+	  
+	  
+	  SUBGOAL_THEN `c0:real = c0 * abs c` ASSUME_TAC THENL
+	    [
+	      MATCH_MP_TAC (SPEC `(\n:num. abs(c:real) pow n)` limit_unique) THEN
+		ASM_MESON_TAC[];
+    
+
+	      DISJ_CASES_TAC (MESON[] `(c0:real) = &0 \/ ~(c0 = &0)`) THENL
+		[
+		  ASM_MESON_TAC[];
+		  SUBGOAL_THEN `abs(c:real) = &1` ASSUME_TAC THENL
+		    [
+		      MP_TAC(REAL_FIELD `~(c0 = &0) ==> (c0:real) = c0 * abs c ==> &1 = abs c`) THEN
+			ASM_REWRITE_TAC[] THEN
+			ASM_MESON_TAC[REAL_ARITH `&1 = a <=> a = &1`];
+
+	    	      ASM_MESON_TAC[REAL_ARITH `a = &1 /\ a < &1 <=> F`]
+		    ]
+
+		]
+	    ]
+	]
+    ]);;
+
+
+
+
+(* |c| < 1 ==> c^n --> 0 *)
+let limit_power = prove(`!c. abs c < &1 ==> (\n. c pow n) --> &0`,
+REPEAT STRIP_TAC THEN
+  ONCE_REWRITE_TAC[limit_abs_zero] THEN
+  BETA_TAC THEN REWRITE_TAC[REAL_ABS_POW] THEN
+  ASM_SIMP_TAC[limit_power_abs]);;
+
+
+
+
+(* Define convergence of a series *)
+parse_as_infix("ssum", (12, "right"));;
+let series_sum = new_definition `!f s. f ssum s <=> (\n. sum(0..n) (\n. f n)) --> s`;;
+
+
+
+(* Sum of the geometric progression *)
+let geom_sum = prove(`!x. ~(x = &1) ==> !n. (sum(0..n) (\i. x pow i) = (&1 - x pow (n + 1))/(&1 - x))`,
+GEN_TAC THEN DISCH_TAC THEN
+INDUCT_TAC THENL
+[
+  REWRITE_TAC[SUM_CLAUSES_NUMSEG; REAL_ARITH `x pow 0 = &1`] THEN
+    REWRITE_TAC[ARITH_RULE `0 + 1 = 1`; REAL_POW_1] THEN
+    MP_TAC (REAL_FIELD `~(x = &1) ==> (&1 - x) / (&1 - x) = &1`) THEN
+    ASM_REWRITE_TAC[EQ_SYM];
+
+  REWRITE_TAC[SUM_CLAUSES_NUMSEG] THEN
+    ASM_SIMP_TAC[ARITH_RULE `0 <= SUC n`] THEN
+    ASSUME_TAC ((UNDISCH o REAL_FIELD) `~(x = &1) ==> ((&1 - b)/(&1 - x) + c = (&1 - b + c - c * x)/(&1 - x))`) THEN
+    ASM_REWRITE_TAC[ARITH_RULE `SUC n = n + 1`] THEN
+    REWRITE_TAC[REAL_ARITH `a - b + b - c = a - c`] THEN
+    REWRITE_TAC[REAL_POW_ADD; REAL_POW_1; REAL_MUL_AC]
+  
+]);;
+ 
+
+
+(* Sum of the geometric series *)
+let geom_series = prove(`!x. abs(x) < &1 ==> (\n. x pow n) ssum &1 / (&1 - x)`,
+REPEAT STRIP_TAC THEN
+REWRITE_TAC[series_sum] THEN
+MP_TAC (REAL_ARITH `abs x < &1 ==> ~(x = &1)`) THEN
+ASM_REWRITE_TAC[] THEN DISCH_TAC THEN
+MP_TAC (SPEC `x:real` geom_sum) THEN
+ASM_REWRITE_TAC[] THEN DISCH_THEN (ASSUME_TAC o (SPEC `n:num`)) THEN
+ASM_REWRITE_TAC[] THEN
+REWRITE_TAC[REAL_FIELD `a / b = a * inv(b)`] THEN
+MATCH_MP_TAC limit_mul THEN
+CONJ_TAC THENL 
+[
+  ONCE_REWRITE_TAC[REAL_ARITH `&1 = &1 - &0`] THEN
+    MATCH_MP_TAC limit_sub THEN
+    CONJ_TAC THENL
+    [
+      ONCE_REWRITE_TAC[REAL_ARITH `&1 - &0 = &1`] THEN
+	ACCEPT_TAC (SPEC `&1` limit_const);
+      ONCE_REWRITE_TAC[GSYM limit_translation] THEN
+	SUBGOAL_TAC "A" `(pow) x = (\n:num. x pow n)` [SIMP_TAC[FUN_EQ_THM]] THEN
+	FIRST_X_ASSUM SUBST1_TAC THEN
+	MATCH_MP_TAC limit_power THEN
+	ASM_SIMP_TAC[]
+    ];
+  ACCEPT_TAC (SPEC `inv(&1 - x)` limit_const)
+]);;
+
+
+

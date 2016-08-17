@@ -1,0 +1,110 @@
+prioritize_real();;
+
+(* Use analysis package *)
+#use "/home/monad/hol_light/Examples/analysis.ml";;
+
+let th1 = REAL_FIELD `~(a = &1) ==> b / (a - &1) + c = (b + a * c - c) / (a - &1)`;;
+let th2 = INST [`a:real pow (n + 1) - &1`, `b:real`; `a:real pow SUC n`, `c:real`] th1;;
+
+(* First version of the geometric sum theorem *)
+let geometric_sum = prove(`~(a = &1) ==> !n. sum(0..n) (\i. a pow i) = (a pow (n + 1) - &1) / (a - &1)`,
+STRIP_TAC THEN
+INDUCT_TAC THEN
+REWRITE_TAC[SUM_CLAUSES_NUMSEG] THENL
+[
+  REWRITE_TAC[ARITH_RULE `0 + 1 = 1`; REAL_FIELD `a pow 0 = &1`] THEN
+  REWRITE_TAC[REAL_FIELD `a pow 1 = a`] THEN
+  ASM_MESON_TAC[REAL_FIELD `~(a = &1) ==> (a - &1) / (a - &1) = &1`];
+
+  ASM_REWRITE_TAC[SUM_CLAUSES_NUMSEG] THEN
+  REWRITE_TAC[LE_0] THEN
+  ASM_SIMP_TAC[th2] THEN
+  REWRITE_TAC[ARITH_RULE `SUC n = n + 1`] THEN
+  ASM_SIMP_TAC[REAL_FIELD `a pow (n + 1) - &1 + a * a pow (n + 1) - a pow (n + 1) = a * a pow (n + 1) - &1`] THEN
+  SIMP_TAC[REAL_POW_ADD; REAL_FIELD `a pow 1 = a`; REAL_MUL_AC]
+]);;
+
+
+
+let th = UNDISCH (IMP_TRANS (REAL_FIELD `abs a < &1 ==> ~(a = &1)`) geometric_sum);;
+
+(* Limit theorem *)
+let th1 = prove(
+`abs a < &1 ==> (\n. (a pow (n + 1) - &1) / (a - &1)) tends_num_real &1/(&1 - a)`,
+STRIP_TAC THEN
+REWRITE_TAC[REAL_POW_ADD; POW_1] THEN
+ASSUME_TAC (SPEC `a - &1` SEQ_CONST) THEN
+ASSUME_TAC (BETA_RULE (SPECL [`\n:num. a:real pow n`; `&0`; `\n:num. a:real`; `a:real`] SEQ_MUL)) THEN
+ASSUME_TAC (BETA_RULE (SPECL [`\n:num. a pow n * a`; `&0`; `\n:num. &1`; `&1`] SEQ_SUB)) THEN
+ASSUME_TAC (BETA_RULE (SPECL [`\n:num. a pow n * a - &1`; `-- &1`; `\n:num. a - &1`; `a - &1`] SEQ_DIV)) THEN
+ASSUME_TAC (REAL_FIELD `abs a < &1 ==> -- &1 / (a - &1) = &1 / (&1 - a)`) THEN
+ASSUME_TAC (REAL_FIELD `abs a < &1 ==> ~(a - &1 = &0)`) THEN
+ASSUME_TAC (REAL_FIELD `&0 * a = &0`) THEN
+ASSUME_TAC (REAL_FIELD `&0 - &1 = -- &1`) THEN
+ASSUME_TAC (SPEC `a:real` SEQ_POWER) THEN
+ASSUME_TAC (SPEC `a:real` SEQ_CONST) THEN
+ASSUME_TAC (SPEC `&1` SEQ_CONST) THEN
+ASM_MESON_TAC[]);;
+
+
+
+
+(* Second version of the geometric sum theorem *)
+let geom_sum = prove(`~(a = &1) ==> !n. sum(0,n) (\i. a pow i) = (a pow n - &1) / (a - &1)`,
+STRIP_TAC THEN
+INDUCT_TAC THENL
+[
+REWRITE_TAC[sum] THEN
+REWRITE_TAC[REAL_FIELD `a pow 0 = &1`; REAL_FIELD `&1 - &1 = &0`] THEN
+ASM_MESON_TAC[REAL_FIELD `~(a = &1) ==> &0 / (a - &1) = &0`];
+
+ASM_REWRITE_TAC[sum] THEN
+REWRITE_TAC[ARITH_RULE `0 + n = n`; ARITH_RULE `SUC n = n + 1`] THEN
+ASM_REWRITE_TAC[UNDISCH (REAL_FIELD `~(a = &1) ==> (a pow n - &1) / (a - &1) + a pow n = (a * a pow n - &1)/(a - &1)`)] THEN
+REWRITE_TAC[REAL_POW_ADD; REAL_FIELD `a pow 1 = a`] THEN
+ASM_MESON_TAC[REAL_MUL_AC]
+]);;
+
+
+(* Main theorem (sum of the geometric series) *)
+let geom_series = prove(`abs a < &1 ==> (\i. a pow i) sums &1 / (&1 - a)`,
+STRIP_TAC THEN
+REWRITE_TAC[sums] THEN
+ASM_REWRITE_TAC[UNDISCH (IMP_TRANS (REAL_FIELD `abs a < &1 ==> ~(a = &1)`) geom_sum)] THEN
+ASSUME_TAC (BETA_RULE (SPECL [`\n:num. a pow n - &1`; `-- &1`; `\n:num. a - &1`; `a - &1`] SEQ_DIV)) THEN
+ASSUME_TAC (BETA_RULE (SPECL [`\n:num. a pow n`; `&0`; `\n:num. &1`; `&1`] SEQ_SUB)) THEN
+ASSUME_TAC (REAL_FIELD `abs a < &1 ==> ~(a - &1 = &0)`) THEN
+ASSUME_TAC (REAL_FIELD `~(a - &1 = &0) ==> -- &1 / (a - &1) = &1/(&1 - a)`) THEN
+ASSUME_TAC (SPEC `a:real` SEQ_POWER) THEN
+ASSUME_TAC (SPEC `a - &1` SEQ_CONST) THEN
+ASSUME_TAC (SPEC `&1` SEQ_CONST) THEN
+ASM_MESON_TAC[REAL_FIELD `&0 - &1 = -- &1`]);;
+
+
+
+(* Another proof *)
+let geom_series = prove(`!a. abs a < &1 ==> (\i. a pow i) sums &1 / (&1 - a)`,
+REPEAT STRIP_TAC THEN
+  REWRITE_TAC[sums] THEN
+  ASSUME_TAC ((UNDISCH o REAL_ARITH) `abs a < &1 ==> ~(a = &1)`) THEN
+  ASSUME_TAC ((UNDISCH o REAL_ARITH) `~(a = &1) ==> ~(&1 - a = &0)`) THEN
+  ASM_REWRITE_TAC[UNDISCH geom_sum] THEN
+  ASM_REWRITE_TAC[(UNDISCH o REAL_FIELD) `~(&1 - a = &0) ==> (b / (&1 - a) = --b / (--(&1 - a)))`] THEN
+  MATCH_MP_TAC SEQ_DIV THEN
+  REPEAT STRIP_TAC THENL
+  [
+    REWRITE_TAC [REAL_ARITH `-- &1 = &0 - &1`] THEN
+      MATCH_MP_TAC SEQ_SUB THEN
+      CONJ_TAC THENL
+      [
+	MATCH_MP_TAC SEQ_POWER THEN ASM_REWRITE_TAC[];
+	ACCEPT_TAC (SPEC `&1` SEQ_CONST)
+      ];
+    
+    REWRITE_TAC [REAL_ARITH `--(&1 - a) = a - &1`] THEN
+      ACCEPT_TAC (SPEC `a - &1` SEQ_CONST);
+    
+    ASM_MESON_TAC[REAL_ARITH `--(&1 - a) = &0 ==> a = &1`; REAL_ARITH `a = &1 /\ abs a < &1 ==> F`]
+  ]
+		       );;
+ 
